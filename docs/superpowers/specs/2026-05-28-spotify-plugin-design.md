@@ -2,7 +2,7 @@
 
 ## 概述
 
-为 FeelUOwn 音乐播放器开发 Spotify 音频源插件，完整对标 feeluown-qqmusic 插件的功能能力。使用 spotapi 库作为 Spotify API 客户端，采用 marshmallow 进行数据序列化，遵循 FeelUOwn 的 ProviderV2 接口规范。
+为 FeelUOwn 音乐播放器开发 Spotify 音频源插件，完整对标 feeluown-qqmusic 插件的功能能力。使用 spotapi 库作为 Spotify API 客户端，采用 pydantic 进行数据序列化（所有字段允许为空），遵循 FeelUOwn 的 ProviderV2 接口规范。
 
 ## 目标
 
@@ -22,7 +22,7 @@
 fuo_spotify/
 ├── __init__.py       # 插件入口：enable/disable，元数据声明
 ├── api.py            # SpotifyApi 类：封装 spotapi 各模块，统一 API 调用
-├── schemas.py        # Marshmallow schemas：Spotify JSON → FeelUOwn 模型
+├── schemas.py        # Pydantic models：Spotify JSON → FeelUOwn 模型（所有字段 Optional）
 ├── provider.py       # SpotifyProvider(ProviderV2)：实现所有资源的 get/search/list
 ├── provider_ui.py    # ProviderUI：GUI 侧栏、登录对话框
 ├── login.py          # 登录管理：用户名密码 + cookie 两种方式
@@ -93,27 +93,35 @@ spotapi 的 `Public` 只有 `song_search` 和 `artist_search`。专辑和播放�
 
 ### 3. Schemas 层（schemas.py）
 
-使用 marshmallow 将 spotapi 返回的 JSON 映射为 FeelUOwn 模型。
+使用 pydantic BaseModel 将 spotapi 返回的 JSON 映射为 FeelUOwn 模型。所有字段定义为 `Optional`，以容忍 Spotify API 返回数据的不完整性。
+
+```python
+from pydantic import BaseModel
+from typing import Optional
+
+class SpotifySong(BaseModel):
+    id: Optional[str] = None
+    name: Optional[str] = None
+    artists: Optional[list] = None
+    album: Optional[dict] = None
+    duration_ms: Optional[int] = None
+```
 
 #### 核心 Schemas
 
 | Schema | 目标模型 | 关键字段映射 |
 |--------|---------|-------------|
-| `SpotifySongSchema` | `SongModel` | `id→identifier`, `name→title`, `artists→BriefArtistModel[]`, `album→BriefAlbumModel`, `duration_ms→duration` |
-| `SpotifyArtistSchema` | `ArtistModel` | `id→identifier`, `name→name`, `images[0].url→pic_url` |
-| `SpotifyAlbumSchema` | `AlbumModel` | `id→identifier`, `name→name`, `images[0].url→cover`, `tracks→SongModel[]` |
-| `SpotifyPlaylistSchema` | `PlaylistModel` | `id→identifier`, `name→name`, `images[0].url→cover`, `tracks→SongModel[]` |
-| `SpotifyUserSchema` | `UserModel` | `id→identifier`, `display_name→name`, `images[0].url→avatar_url` |
+| `SpotifySong` | `SongModel` | `id→identifier`, `name→title`, `artists→BriefArtistModel[]`, `album→BriefAlbumModel`, `duration_ms→duration` |
+| `SpotifyArtist` | `ArtistModel` | `id→identifier`, `name→name`, `images[0].url→pic_url` |
+| `SpotifyAlbum` | `AlbumModel` | `id→identifier`, `name→name`, `images[0].url→cover`, `tracks→SongModel[]` |
+| `SpotifyPlaylist` | `PlaylistModel` | `id→identifier`, `name→name`, `images[0].url→cover`, `tracks→SongModel[]` |
+| `SpotifyUser` | `UserModel` | `id→identifier`, `display_name→name`, `images[0].url→avatar_url` |
 
 #### 辅助 Schemas
 
 | Schema | 用途 |
 |--------|------|
-| `SearchSongSchema` | 搜索结果中的歌曲（字段较少） |
-| `SearchArtistSchema` | 搜索结果中的歌手 |
-| `SearchAlbumSchema` | 搜索结果中的专辑 |
-| `SearchPlaylistSchema` | 搜索结果中的播放列表 |
-| `BriefTrackSchema` | 嵌套在播放列表/专辑中的简要歌曲信息 |
+| `SpotifyBriefTrack` | 嵌套在播放列表/专辑中的简要歌曲信息 |
 
 #### Spotify ID 特点
 
@@ -254,7 +262,7 @@ Provider 层捕获 spotapi 的异常，转换为 FeelUOwn 的 `ModelNotFound` �
 - `redis>=7.1.0` — 当前未使用
 
 需要新增：
-- `marshmallow` — 数据序列化（与 QQ 音乐插件一致）
+- `pydantic` — 数据序列化（所有字段 Optional，容忍 API 数据不完整）
 
 ## 实施顺序
 
