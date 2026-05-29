@@ -8,6 +8,6 @@ def test_provider_constants():
 
 def test_quality_map_has_all_levels():
     assert set(QUALITY_MAP.keys()) == {'lq', 'sq', 'hq', 'shq'}
-    for level, config in QUALITY_MAP.items():
+    for _, config in QUALITY_MAP.items():
         assert 'bitrate' in config
         assert 'format' in config
