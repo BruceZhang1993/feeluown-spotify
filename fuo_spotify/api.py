@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Generator, Mapping, Optional
+from typing import Generator, Mapping, Optional
 
 import spotapi
 

@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 from fuo_spotify.api import SpotifyApi
-from fuo_spotify.excs import SpotifyAPIError, SpotifyTrackError
+from fuo_spotify.excs import SpotifyTrackError
 
 
 @pytest.fixture
