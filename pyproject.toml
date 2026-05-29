@@ -1,11 +1,48 @@
 [project]
 name = "feeluown-spotify"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.10"
+description = "Spotify provider for FeelUOwn player."
+authors = [{ name = "Bruce Zhang" }]
+requires-python = ">=3.10,<4"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = [
     "feeluown>=4.1.16",
     "pydantic>=2.0",
     "spotapi>=1.2.7",
     "websockets>=16.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/BruceZhang1993/feeluown-spotify"
+Repository = "https://github.com/BruceZhang1993/feeluown-spotify"
+Issues = "https://github.com/BruceZhang1993/feeluown-spotify/issues"
+
+[project.entry-points."fuo.plugins_v1"]
+spotify = "fuo_spotify"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["fuo_spotify"]
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
