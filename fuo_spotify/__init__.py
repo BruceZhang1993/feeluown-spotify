@@ -20,12 +20,10 @@ def enable(app):
     if cfg is None:
         logger.info("No saved Spotify session found")
     else:
-        from fuo_spotify.api import SpotifyApi
         api = SpotifyApi(cfg)
         provider.set_api(api)
         provider.set_login_manager(login_manager)
         try:
-            from fuo_spotify.login import LoginManager as LM
             user_info = api.get_user_info()
             from feeluown.library import UserModel
             user = UserModel(
