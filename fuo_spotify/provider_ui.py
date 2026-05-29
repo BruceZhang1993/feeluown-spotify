@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from feeluown.utils.dispatch import Signal
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,10 +96,20 @@ class ProviderUI:
         self._login_manager = login_manager
         self._provider = provider
         self._dialog = None
+        self._login_event = Signal("login_event")
 
     @property
     def provider(self):
         return self._provider
+
+    @property
+    def login_event(self):
+        return self._login_event
+
+    def login_or_go_home(self):
+        if self._login_manager.is_logged_in:
+            return
+        self._show_login_dialog()
 
     def register_pages(self, route):
         pass
@@ -106,10 +118,14 @@ class ProviderUI:
         from pathlib import Path
         return str(Path(__file__).parent / 'icons' / 'spotify.svg')
 
-    def show_login_dialog(self):
+    def _show_login_dialog(self):
         if self._dialog is None:
             self._dialog = LoginDialog(self._login_manager, self._app)
+            self._dialog.accepted.connect(self._on_login_accepted)
         self._dialog.show()
+
+    def _on_login_accepted(self):
+        self._login_event.emit(self, 1)
 
     def get_status_text(self):
         if self._login_manager.is_logged_in:
