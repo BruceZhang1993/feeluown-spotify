@@ -1,5 +1,5 @@
 import logging
-from typing import Protocol
+from typing import List, Optional, Protocol
 
 from feeluown.excs import ModelNotFound
 from feeluown.library import (
@@ -104,6 +104,63 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
 
     def get_current_user(self):
         return self._user
+
+    def song_get(self, identifier):
+        if self._api is None:
+            raise ModelNotFound(f"Song {identifier} not found")
+        try:
+            track_data = self._api.get_track(identifier)
+            return _track_to_model(track_data)
+        except SpotifyTrackError:
+            raise ModelNotFound(f"Song {identifier} not found")
+
+    def song_get_media(self, song, quality: Quality.Audio) -> Optional[Media]:
+        if self._api is None:
+            return None
+        try:
+            track_data = self._api.get_track(song.identifier)
+            preview_url = track_data.get("preview_url")
+            if preview_url:
+                return Media(preview_url, bitrate=128, format="mp3")
+            return None
+        except Exception as e:
+            logger.warning(f"Get song media failed: {e}")
+            return None
+
+    def song_list_quality(self, song) -> List[Quality.Audio]:
+        return [Quality.Audio("lq")]
+
+    def song_get_lyric(self, song):
+        if self._api is None:
+            return None
+        try:
+            lyrics_data = self._api.get_lyrics(song.identifier)
+            if lyrics_data and lyrics_data.get("lyrics"):
+                lines = lyrics_data["lyrics"].get("lines", [])
+                content = "\n".join(
+                    f"[{line.get('startTimeMs', '0')}]"
+                    f"{line.get('words', '')}"
+                    for line in lines
+                )
+                return LyricModel(
+                    identifier=song.identifier,
+                    source=SOURCE,
+                    content=content,
+                )
+            return None
+        except Exception as e:
+            logger.warning(f"Get song lyric failed: {e}")
+            return None
+
+    def song_list_similar(self, song):
+        if self._api is None:
+            return []
+        try:
+            tracks = self._api.get_radio_tracks(song.identifier)
+            return [_track_to_model(t) for t in tracks]
+        except Exception as e:
+            logger.warning(f"Get similar songs failed: {e}")
+            return []
 
 
 provider = SpotifyProvider()
