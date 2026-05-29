@@ -95,6 +95,10 @@ class ProviderUI:
         self._provider = provider
         self._dialog = None
 
+    @property
+    def provider(self):
+        return self._provider
+
     def show_login_dialog(self):
         if self._dialog is None:
             self._dialog = LoginDialog(self._login_manager, self._app)
