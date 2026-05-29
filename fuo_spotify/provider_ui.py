@@ -37,7 +37,7 @@ class LoginDialog(QDialog):
         password_layout.addWidget(self._username_input)
         password_layout.addWidget(QLabel("密码:"))
         self._password_input = QLineEdit()
-        self._password_input.setEchoMode(QLineEdit.Password)
+        self._password_input.setEchoMode(QLineEdit.EchoMode.Password)
         password_layout.addWidget(self._password_input)
         self._login_btn = QPushButton("登录")
         self._login_btn.clicked.connect(self._on_login)
