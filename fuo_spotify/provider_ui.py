@@ -99,6 +99,9 @@ class ProviderUI:
     def provider(self):
         return self._provider
 
+    def register_pages(self, route):
+        pass
+
     def show_login_dialog(self):
         if self._dialog is None:
             self._dialog = LoginDialog(self._login_manager, self._app)
