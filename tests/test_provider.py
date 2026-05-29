@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 import pytest
-from feeluown.library import SearchType, SimpleSearchResult, SongModel, LyricModel
+from feeluown.library import SearchType, SimpleSearchResult, SongModel, LyricModel, AlbumModel, ArtistModel
 from feeluown.media import Media, Quality
 
 
@@ -149,3 +149,54 @@ def test_song_list_similar(mock_api):
     similar = provider.song_list_similar(song)
     assert len(similar) == 1
     assert similar[0].identifier == "track2"
+
+
+def test_album_get(mock_api):
+    mock_api.get_album.return_value = {
+        "id": "al1",
+        "name": "Test Album",
+        "cover": {"sources": [{"url": "https://example.com/cover.jpg"}]},
+        "artists": [{"id": "ar1", "name": "Artist 1"}],
+    }
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    album = provider.album_get("al1")
+    assert isinstance(album, AlbumModel)
+    assert album.identifier == "al1"
+    assert album.name == "Test Album"
+
+
+def test_album_get_not_found(mock_api):
+    mock_api.get_album.return_value = {}
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    from feeluown.excs import ModelNotFound
+    with pytest.raises(ModelNotFound):
+        provider.album_get("nonexistent")
+
+
+def test_artist_get(mock_api):
+    mock_api.get_artist.return_value = {
+        "id": "ar1",
+        "name": "Test Artist",
+        "visuals": {
+            "avatarImage": {
+                "sources": [{"url": "https://example.com/artist.jpg"}]
+            }
+        },
+    }
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    artist = provider.artist_get("ar1")
+    assert isinstance(artist, ArtistModel)
+    assert artist.identifier == "ar1"
+    assert artist.name == "Test Artist"
+
+
+def test_artist_get_not_found(mock_api):
+    mock_api.get_artist.return_value = {}
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    from feeluown.excs import ModelNotFound
+    with pytest.raises(ModelNotFound):
+        provider.artist_get("nonexistent")

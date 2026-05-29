@@ -162,6 +162,80 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             logger.warning(f"Get similar songs failed: {e}")
             return []
 
+    def album_get(self, identifier):
+        if self._api is None:
+            raise ModelNotFound(f"Album {identifier} not found")
+        try:
+            data = self._api.get_album(identifier)
+            if not data:
+                raise ModelNotFound(f"Album {identifier} not found")
+            artists = []
+            for a in data.get("artists", []):
+                artists.append(BriefArtistModel(
+                    identifier=a.get("id", ""),
+                    source=SOURCE,
+                    name=a.get("name", ""),
+                ))
+            from feeluown.library import AlbumModel
+            return AlbumModel(
+                identifier=data.get("id", identifier),
+                source=SOURCE,
+                name=data.get("name", ""),
+                cover=_get_image_url(data.get("cover", {}).get("sources", [])),
+                artists=artists,
+                description="",
+                songs=[],
+            )
+        except ModelNotFound:
+            raise
+        except Exception as e:
+            raise ModelNotFound(f"Album {identifier} not found: {e}")
+
+    def album_create_songs_rd(self, album):
+        if self._api is None:
+            return create_reader([])
+        try:
+            data = self._api.get_album(album.identifier)
+            tracks = data.get("tracks", {}).get("items", []) if data else []
+            songs = []
+            for track in tracks:
+                try:
+                    songs.append(_track_to_model(track))
+                except Exception:
+                    continue
+            return create_reader(songs)
+        except Exception as e:
+            logger.warning(f"Get album songs failed: {e}")
+            return create_reader([])
+
+    def artist_get(self, identifier):
+        if self._api is None:
+            raise ModelNotFound(f"Artist {identifier} not found")
+        try:
+            data = self._api.get_artist(identifier)
+            if not data:
+                raise ModelNotFound(f"Artist {identifier} not found")
+            from feeluown.library import ArtistModel
+            return ArtistModel(
+                identifier=data.get("id", identifier),
+                source=SOURCE,
+                name=data.get("name", ""),
+                pic_url=_get_image_url(data.get("visuals", {}).get("avatarImage", {}).get("sources", [])),
+                description="",
+                hot_songs=[],
+                aliases=[],
+            )
+        except ModelNotFound:
+            raise
+        except Exception as e:
+            raise ModelNotFound(f"Artist {identifier} not found: {e}")
+
+    def artist_create_songs_rd(self, artist):
+        return create_reader([])
+
+    def artist_create_albums_rd(self, artist):
+        return create_reader([])
+
 
 provider = SpotifyProvider()
 
