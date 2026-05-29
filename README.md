@@ -3,7 +3,7 @@
 [English](README.md) | [中文](README_zh.md)
 
 [![Tests](https://github.com/BruceZhang1993/feeluown-spotify/actions/workflows/test.yml/badge.svg)](https://github.com/BruceZhang1993/feeluown-spotify/actions/workflows/test.yml)
-[![Codecov](https://codecov.io/gh/BruceZhang1993/feeluown-spotify/branch/main/graph/badge.svg)](https://codecov.io/gh/BruceZhang1993/feeluown-spotify)
+[![codecov](https://codecov.io/gh/BruceZhang1993/feeluown-spotify/graph/badge.svg?token=VJE6N81L26)](https://codecov.io/gh/BruceZhang1993/feeluown-spotify)
 [![PyPI](https://img.shields.io/pypi/v/feeluown-spotify)](https://pypi.org/project/feeluown-spotify/)
 [![Python](https://img.shields.io/pypi/pyversions/feeluown-spotify)](https://pypi.org/project/feeluown-spotify/)
 [![License](https://img.shields.io/github/license/BruceZhang1993/feeluown-spotify)](LICENSE)
