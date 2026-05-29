@@ -103,3 +103,65 @@ def test_spotify_user_no_images():
     data = {"id": "user1", "display_name": "Test User"}
     user = SpotifyUser.model_validate(data)
     assert user.avatar_url is None
+
+
+def test_spotify_brief_album_no_images():
+    from fuo_spotify.schemas import SpotifyBriefAlbum
+    album = SpotifyBriefAlbum(id="al1")
+    assert album.cover is None
+
+
+def test_spotify_brief_album_with_images():
+    from fuo_spotify.schemas import SpotifyBriefAlbum, SpotifyImage
+    album = SpotifyBriefAlbum(
+        id="al1",
+        images=[SpotifyImage(url="https://example.com/cover.jpg")],
+    )
+    assert album.cover == "https://example.com/cover.jpg"
+
+
+def test_spotify_album_no_images():
+    data = {"id": "album1", "name": "Album"}
+    album = SpotifyAlbum.model_validate(data)
+    assert album.cover is None
+
+
+def test_spotify_playlist_no_images():
+    data = {"id": "pl1", "name": "Playlist"}
+    playlist = SpotifyPlaylist.model_validate(data)
+    assert playlist.cover is None
+
+
+def test_spotify_image_fields():
+    from fuo_spotify.schemas import SpotifyImage
+    img = SpotifyImage(url="https://example.com/img.jpg", width=640, height=480)
+    assert img.url == "https://example.com/img.jpg"
+    assert img.width == 640
+    assert img.height == 480
+
+
+def test_spotify_song_all_fields():
+    data = {
+        "id": "track1",
+        "name": "Song",
+        "duration_ms": 180000,
+        "artists": [{"id": "ar1", "name": "Artist"}],
+        "album": {
+            "id": "al1",
+            "name": "Album",
+            "images": [{"url": "https://example.com/cover.jpg"}],
+        },
+        "preview_url": "https://example.com/preview.mp3",
+        "external_urls": {"spotify": "https://open.spotify.com/track/track1"},
+    }
+    song = SpotifySong.model_validate(data)
+    assert song.preview_url == "https://example.com/preview.mp3"
+    assert song.external_urls == {"spotify": "https://open.spotify.com/track/track1"}
+
+
+def test_spotify_lyrics():
+    from fuo_spotify.schemas import SpotifyLyrics
+    lyrics = SpotifyLyrics(lyrics={"lines": [{"words": "hello"}]})
+    assert lyrics.lyrics["lines"][0]["words"] == "hello"
+    empty = SpotifyLyrics()
+    assert empty.lyrics is None
