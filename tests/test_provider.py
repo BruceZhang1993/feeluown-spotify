@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 import pytest
-from feeluown.library import SearchType, SimpleSearchResult, SongModel, LyricModel, AlbumModel, ArtistModel
+from feeluown.library import SearchType, SimpleSearchResult, SongModel, LyricModel, AlbumModel, ArtistModel, PlaylistModel
 from feeluown.media import Media, Quality
 
 
@@ -200,3 +200,40 @@ def test_artist_get_not_found(mock_api):
     from feeluown.excs import ModelNotFound
     with pytest.raises(ModelNotFound):
         provider.artist_get("nonexistent")
+
+
+def test_playlist_get(mock_api):
+    mock_api.get_playlist.return_value = {
+        "identifier": {"id": "pl1"},
+        "name": "Test Playlist",
+        "description": "A test playlist",
+        "images": {"items": [{"sources": [{"url": "https://example.com/cover.jpg"}]}]},
+        "content": {
+            "items": [
+                {"item": {"data": {"id": "track1", "name": "Song 1", "duration_ms": 180000}}},
+                {"item": {"data": {"id": "track2", "name": "Song 2", "duration_ms": 210000}}},
+            ]
+        },
+    }
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    playlist = provider.playlist_get("pl1")
+    assert isinstance(playlist, PlaylistModel)
+    assert playlist.identifier == "pl1"
+    assert playlist.name == "Test Playlist"
+    assert playlist.description == "A test playlist"
+    assert "cover.jpg" in playlist.cover
+
+
+def test_playlist_add_song(mock_api):
+    mock_api.add_to_playlist.return_value = True
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    playlist = MagicMock()
+    playlist.identifier = "pl1"
+    playlist._cache = {"songs": []}
+    song = MagicMock()
+    song.identifier = "track1"
+    result = provider.playlist_add_song(playlist, song)
+    assert result is True
+    assert "songs" not in playlist._cache

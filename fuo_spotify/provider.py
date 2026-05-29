@@ -236,6 +236,51 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
     def artist_create_albums_rd(self, artist):
         return create_reader([])
 
+    def playlist_get(self, identifier):
+        if self._api is None:
+            raise ModelNotFound(f"Playlist {identifier} not found")
+        try:
+            data = self._api.get_playlist(identifier)
+            if not data:
+                raise ModelNotFound(f"Playlist {identifier} not found")
+            tracks_data = data.get("content", {}).get("items", [])
+            songs = []
+            for item in tracks_data:
+                track = item.get("item", {}).get("data", {})
+                if track.get("id"):
+                    try:
+                        songs.append(_track_to_model(track))
+                    except Exception:
+                        continue
+            from feeluown.library import PlaylistModel
+            return PlaylistModel(
+                identifier=data.get("identifier", {}).get("id", identifier),
+                source=SOURCE,
+                name=data.get("name", ""),
+                cover=_get_image_url(data.get("images", {}).get("items", [{}])[0].get("sources", [])),
+                description=data.get("description", "") or "",
+            )
+        except ModelNotFound:
+            raise
+        except Exception as e:
+            raise ModelNotFound(f"Playlist {identifier} not found: {e}")
+
+    def playlist_create_songs_rd(self, playlist):
+        songs = self._model_cache_get_or_fetch(playlist, "songs")
+        return create_reader(songs)
+
+    def playlist_add_song(self, playlist, song):
+        if self._api is None:
+            return False
+        playlist._cache.pop("songs", None)
+        return self._api.add_to_playlist(playlist.identifier, song.identifier)
+
+    def playlist_remove_song(self, playlist, song):
+        if self._api is None:
+            return False
+        playlist._cache.pop("songs", None)
+        return self._api.remove_from_playlist(playlist.identifier, song.identifier)
+
 
 provider = SpotifyProvider()
 
