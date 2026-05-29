@@ -54,8 +54,7 @@ def test_login_with_cookies_success(mock_spotapi, login_manager):
     assert login_manager.is_logged_in is True
 
 
-@patch('fuo_spotify.login.spotapi')
-def test_restore_session_no_file(mock_spotapi, login_manager):
+def test_restore_session_no_file(login_manager):
     with patch('fuo_spotify.login.CREDENTIALS_PATH') as mock_path:
         mock_path.exists.return_value = False
         result = login_manager.restore_session()
