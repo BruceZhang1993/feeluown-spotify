@@ -1,6 +1,6 @@
 # fuo_spotify/provider_ui.py
 import logging
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QLabel,
