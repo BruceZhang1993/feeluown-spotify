@@ -102,6 +102,10 @@ class ProviderUI:
     def register_pages(self, route):
         pass
 
+    def get_colorful_svg(self) -> str:
+        from pathlib import Path
+        return str(Path(__file__).parent / 'icons' / 'spotify.svg')
+
     def show_login_dialog(self):
         if self._dialog is None:
             self._dialog = LoginDialog(self._login_manager, self._app)
