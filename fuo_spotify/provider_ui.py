@@ -3,15 +3,12 @@ import logging
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QTabWidget,
     QWidget,
-    QMessageBox,
 )
-from PyQt5.QtCore import Qt
 
 logger = logging.getLogger(__name__)
 
