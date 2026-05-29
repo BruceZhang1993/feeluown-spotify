@@ -4,9 +4,6 @@ from fuo_spotify.schemas import (
     SpotifyAlbum,
     SpotifyPlaylist,
     SpotifyUser,
-    SpotifyBriefAlbum,
-    SpotifyBriefArtist,
-    SpotifyImage,
 )
 
 
