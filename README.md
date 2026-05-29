@@ -1,5 +1,7 @@
 # feeluown-spotify
 
+[English](README.md) | [中文](README_zh.md)
+
 [![Tests](https://github.com/BruceZhang1993/feeluown-spotify/actions/workflows/test.yml/badge.svg)](https://github.com/BruceZhang1993/feeluown-spotify/actions/workflows/test.yml)
 [![Codecov](https://codecov.io/gh/BruceZhang1993/feeluown-spotify/branch/main/graph/badge.svg)](https://codecov.io/gh/BruceZhang1993/feeluown-spotify)
 [![PyPI](https://img.shields.io/pypi/v/feeluown-spotify)](https://pypi.org/project/feeluown-spotify/)
@@ -8,88 +10,108 @@
 
 Spotify provider for [FeelUOwn](https://github.com/feeluown/feeluown) player.
 
-## 功能
+## ⚠️ Legal Disclaimer
 
-- 🔍 搜索歌曲、歌手、专辑、播放列表
-- 🎵 歌曲详情、播放、歌词
-- 📀 专辑详情和歌曲列表
-- 🎤 歌手详情、歌曲和专辑
-- 📋 播放列表管理（查看、添加、移除歌曲）
-- 🔐 用户认证（用户名/密码 + Cookie 两种方式）
-- ❤️ 收藏管理
-- 🎧 每日推荐
-- 🔀 相似歌曲推荐（基于 Spotify 电台）
+**This project uses unofficial Spotify APIs and is NOT affiliated with, endorsed by, or connected to Spotify AB or any of its subsidiaries.**
 
-## 安装
+By using this software, you acknowledge and agree to the following:
+
+1. **Terms of Service violation**: This plugin relies on [spotapi](https://pypi.org/project/spotapi/), which interacts with Spotify's private/internal APIs in ways that are **not authorized by Spotify**. Using this software may violate [Spotify's Terms of Service](https://www.spotify.com/legal/end-user-agreement/) and could result in **suspension or termination of your Spotify account**.
+
+2. **No warranty**: This software is provided "as is" without warranty of any kind, express or implied. The authors and contributors are **not responsible** for any damages, including but not limited to loss of data, account suspension, or any other consequences arising from the use of this software.
+
+3. **Educational purpose only**: This project is developed for **educational and research purposes**. It is intended to demonstrate how to build a music player plugin and explore music platform APIs. It is not intended for commercial use or to circumvent any digital rights management (DRM) protections.
+
+4. **User responsibility**: You are solely responsible for your use of this software. **Use it at your own risk.** The developers strongly recommend using a **secondary or disposable Spotify account** rather than your primary account.
+
+5. **Compliance**: This project does **not** store, redistribute, or modify any copyrighted music content. It does **not** bypass DRM or enable unauthorized downloading of copyrighted material.
+
+6. **Spotify Premium**: Some features of this plugin may require a **Spotify Premium** subscription. Free-tier users may experience limited functionality.
+
+If you do not agree with these terms, **do not use this software**.
+
+## Features
+
+- 🔍 Search songs, artists, albums, playlists
+- 🎵 Song details, playback, lyrics
+- 📀 Album details and track listing
+- 🎤 Artist details, songs and albums
+- 📋 Playlist management (view, add, remove songs)
+- 🔐 User authentication (username/password + Cookie)
+- ❤️ Favorites management
+- 🎧 Daily recommendations
+- 🔀 Similar songs (based on Spotify radio)
+
+## Installation
 
 ```bash
 pip install feeluown-spotify
 ```
 
-或使用 uv：
+Or using uv:
 
 ```bash
 uv pip install feeluown-spotify
 ```
 
-## 使用
+## Usage
 
-### 登录
+### Login
 
-启动 FeelUOwn 后，通过以下方式登录 Spotify：
+After launching FeelUOwn, log in to Spotify via:
 
-1. **用户名/密码登录**：在 GUI 中打开 Spotify 登录对话框，输入用户名和密码
-2. **Cookie 登录**：从浏览器复制 Spotify Cookie，粘贴到登录对话框
+1. **Username/Password**: Open the Spotify login dialog in the GUI, enter your credentials
+2. **Cookie**: Copy Spotify cookies from your browser and paste into the login dialog
 
-登录凭据会自动保存到 `~/.feeluown/spotify_credentials.json`，下次启动时自动恢复。
+Login credentials are automatically saved to `~/.feeluown/spotify_credentials.json` and restored on next launch.
 
-### 搜索
+### Search
 
-在 FeelUOwn 中使用 `spotify` 前缀搜索：
+Use the `spotify` prefix in FeelUOwn to search:
 
 ```
-spotify: 歌曲名
+spotify: song name
 ```
 
-## 开发
+## Development
 
-### 环境准备
+### Setup
 
 ```bash
-# 克隆项目
+# Clone the project
 git clone https://github.com/BruceZhang1993/feeluown-spotify.git
 cd feeluown-spotify
 
-# 安装依赖
+# Install dependencies
 uv sync
 
-# 运行测试
+# Run tests
 uv run pytest tests/ -v
 
-# 运行测试并生成覆盖率报告
+# Run tests with coverage
 uv run pytest tests/ --cov=fuo_spotify --cov-report=html
 ```
 
-### 项目结构
+### Project Structure
 
 ```
 fuo_spotify/
-├── __init__.py       # 插件入口，enable/disable 生命周期
-├── api.py            # SpotifyApi 类，封装 spotapi 各模块
-├── schemas.py        # Pydantic 数据模型，Spotify JSON → FeelUOwn 模型
-├── provider.py       # SpotifyProvider(ProviderV2)，核心功能实现
-├── provider_ui.py    # GUI 登录对话框
-├── login.py          # 登录管理，支持密码和 Cookie 两种方式
-├── excs.py           # 自定义异常类
-└── consts.py         # 常量定义
+├── __init__.py       # Plugin entry point, enable/disable lifecycle
+├── api.py            # SpotifyApi class, wraps spotapi modules
+├── schemas.py        # Pydantic data models, Spotify JSON → FeelUOwn models
+├── provider.py       # SpotifyProvider(ProviderV2), core functionality
+├── provider_ui.py    # GUI login dialog
+├── login.py          # Login management, password and Cookie authentication
+├── excs.py           # Custom exceptions
+└── consts.py         # Constants
 ```
 
-## 技术栈
+## Tech Stack
 
-- [FeelUOwn](https://github.com/feeluown/feeluown) — 音乐播放器框架
-- [spotapi](https://pypi.org/project/spotapi/) — Spotify API 客户端
-- [Pydantic](https://docs.pydantic.dev/) — 数据序列化
+- [FeelUOwn](https://github.com/feeluown/feeluown) — Music player framework
+- [spotapi](https://pypi.org/project/spotapi/) — Spotify API client
+- [Pydantic](https://docs.pydantic.dev/) — Data serialization
 
-## 许可证
+## License
 
 [GPL-3.0-or-later](LICENSE)
