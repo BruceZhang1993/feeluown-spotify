@@ -169,23 +169,10 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             data = self._api.get_album(identifier)
             if not data:
                 raise ModelNotFound(f"Album {identifier} not found")
-            artists = []
-            for a in data.get("artists", []):
-                artists.append(BriefArtistModel(
-                    identifier=a.get("id", ""),
-                    source=SOURCE,
-                    name=a.get("name", ""),
-                ))
-            from feeluown.library import AlbumModel
-            return AlbumModel(
-                identifier=data.get("id", identifier),
-                source=SOURCE,
-                name=data.get("name", ""),
-                cover=_get_image_url(data.get("cover", {}).get("sources", [])),
-                artists=artists,
-                description="",
-                songs=[],
-            )
+            album = _album_model_from_data(data)
+            if not album.identifier:
+                album.identifier = identifier
+            return album
         except ModelNotFound:
             raise
         except Exception as e:
@@ -215,16 +202,10 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             data = self._api.get_artist(identifier)
             if not data:
                 raise ModelNotFound(f"Artist {identifier} not found")
-            from feeluown.library import ArtistModel
-            return ArtistModel(
-                identifier=data.get("id", identifier),
-                source=SOURCE,
-                name=data.get("name", ""),
-                pic_url=_get_image_url(data.get("visuals", {}).get("avatarImage", {}).get("sources", [])),
-                description="",
-                hot_songs=[],
-                aliases=[],
-            )
+            artist = _artist_model_from_data(data)
+            if not artist.identifier:
+                artist.identifier = identifier
+            return artist
         except ModelNotFound:
             raise
         except Exception as e:
@@ -280,6 +261,42 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             return False
         playlist._cache.pop("songs", None)
         return self._api.remove_from_playlist(playlist.identifier, song.identifier)
+
+    def current_user_list_playlists(self):
+        user = self.get_current_user()
+        if user is None:
+            return []
+        return user.cache_get("playlists")[0] if user.cache_get("playlists")[1] else []
+
+    def current_user_fav_create_songs_rd(self):
+        user = self.get_current_user()
+        if user is None:
+            return create_reader([])
+        return create_reader([])
+
+    def rec_list_daily_songs(self):
+        if self._api is None:
+            return []
+        try:
+            user = self.get_current_user()
+            if user is None:
+                return []
+            return []
+        except Exception as e:
+            logger.warning(f"Get daily songs failed: {e}")
+            return []
+
+    def rec_list_daily_playlists(self):
+        if self._api is None:
+            return []
+        try:
+            user = self.get_current_user()
+            if user is None:
+                return []
+            return []
+        except Exception as e:
+            logger.warning(f"Get daily playlists failed: {e}")
+            return []
 
 
 provider = SpotifyProvider()
@@ -375,4 +392,37 @@ def _playlist_brief_model(data: dict) -> BriefPlaylistModel:
         identifier=data.get("id", ""),
         source=SOURCE,
         name=data.get("name", ""),
+    )
+
+
+def _album_model_from_data(data: dict) -> "AlbumModel":
+    from feeluown.library import AlbumModel
+    artists = []
+    for a in data.get("artists", []):
+        artists.append(BriefArtistModel(
+            identifier=a.get("id", ""),
+            source=SOURCE,
+            name=a.get("name", ""),
+        ))
+    return AlbumModel(
+        identifier=data.get("id", ""),
+        source=SOURCE,
+        name=data.get("name", ""),
+        cover=_get_image_url(data.get("cover", {}).get("sources", [])),
+        artists=artists,
+        description="",
+        songs=[],
+    )
+
+
+def _artist_model_from_data(data: dict) -> "ArtistModel":
+    from feeluown.library import ArtistModel
+    return ArtistModel(
+        identifier=data.get("id", ""),
+        source=SOURCE,
+        name=data.get("name", ""),
+        pic_url=_get_image_url(data.get("visuals", {}).get("avatarImage", {}).get("sources", [])),
+        description="",
+        hot_songs=[],
+        aliases=[],
     )
