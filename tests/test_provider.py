@@ -237,3 +237,29 @@ def test_playlist_add_song(mock_api):
     result = provider.playlist_add_song(playlist, song)
     assert result is True
     assert "songs" not in playlist._cache
+
+
+def test_has_current_user_false():
+    from fuo_spotify.provider import provider
+    provider._user = None
+    assert provider.has_current_user() is False
+
+
+def test_has_current_user_true():
+    from fuo_spotify.provider import provider
+    provider._user = MagicMock()
+    assert provider.has_current_user() is True
+
+
+def test_current_user_list_playlists_no_user():
+    from fuo_spotify.provider import provider
+    provider._user = None
+    result = provider.current_user_list_playlists()
+    assert result == []
+
+
+def test_rec_list_daily_songs_no_user():
+    from fuo_spotify.provider import provider
+    provider._user = None
+    result = provider.rec_list_daily_songs()
+    assert result == []
