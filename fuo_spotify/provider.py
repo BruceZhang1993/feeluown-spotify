@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Protocol, Tuple
+from typing import Protocol
 
 from feeluown.excs import ModelNotFound
 from feeluown.library import (
