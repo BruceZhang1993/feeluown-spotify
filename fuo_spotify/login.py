@@ -45,7 +45,7 @@ BROWSER_LABELS: dict[str, str] = {
 
 
 def _get_browser_func(name: str):
-    """返回指定浏览器的 cookie 提取函数。"""
+    """返回指定浏览器的 cookie 提取函数（返回 CookieJar）。"""
     import browser_cookie3
 
     if name == "zen":
@@ -67,7 +67,9 @@ def _get_browser_func(name: str):
                     domain_name, key_file, **args,
                 )
 
-        return _Zen
+        return lambda domain_name="": (
+            _Zen(domain_name=domain_name).load()
+        )
     return getattr(browser_cookie3, name, None)
 
 
