@@ -576,6 +576,7 @@ def test_current_user_list_playlists_with_user():
     mock_user = MagicMock()
     mock_user.cache_get.return_value = (["playlist1", "playlist2"], True)
     provider._user = mock_user
+    provider._api = MagicMock()
     result = provider.current_user_list_playlists()
     assert result == ["playlist1", "playlist2"]
 
@@ -585,6 +586,7 @@ def test_current_user_list_playlists_empty_cache():
     mock_user = MagicMock()
     mock_user.cache_get.return_value = ([], False)
     provider._user = mock_user
+    provider._api = None
     result = provider.current_user_list_playlists()
     assert result == []
 

@@ -28,12 +28,14 @@ def api(mock_login):
 
 def test_search_songs_parses_response(api):
     api._song.query_songs.return_value = {
-        "searchV2": {
-            "tracksV2": {
-                "items": [
-                    {"item": {"data": {"id": "track1", "name": "Song 1"}}},
-                    {"item": {"data": {"id": "track2", "name": "Song 2"}}},
-                ]
+        "data": {
+            "searchV2": {
+                "tracksV2": {
+                    "items": [
+                        {"item": {"data": {"id": "track1", "name": "Song 1"}}},
+                        {"item": {"data": {"id": "track2", "name": "Song 2"}}},
+                    ]
+                }
             }
         }
     }
@@ -56,12 +58,14 @@ def test_search_songs_non_mapping_result(api):
 
 def test_search_songs_filters_items_without_id(api):
     api._song.query_songs.return_value = {
-        "searchV2": {
-            "tracksV2": {
-                "items": [
-                    {"item": {"data": {"name": "No ID"}}},
-                    {"item": {"data": {"id": "track1", "name": "Song 1"}}},
-                ]
+        "data": {
+            "searchV2": {
+                "tracksV2": {
+                    "items": [
+                        {"item": {"data": {"name": "No ID"}}},
+                        {"item": {"data": {"id": "track1", "name": "Song 1"}}},
+                    ]
+                }
             }
         }
     }
@@ -79,20 +83,29 @@ def test_search_songs_api_error(api):
 # --- search_artists ---
 
 def test_search_artists(api):
-    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
-        mock_spotapi.Public.artist_search.return_value = iter([
-            {"id": "ar1", "name": "Artist 1"},
-        ])
-        results = list(api.search_artists("test"))
-        assert len(results) == 1
-        assert results[0]["id"] == "ar1"
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "searchV2": {
+                "artists": {
+                    "items": [
+                        {"data": {"id": "ar1", "profile": {"name": "Artist 1"}}},
+                    ]
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    results = api.search_artists("test")
+    assert len(results) == 1
+    assert results[0]["id"] == "ar1"
 
 
 def test_search_artists_api_error(api):
-    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
-        mock_spotapi.Public.artist_search.side_effect = Exception("fail")
-        with pytest.raises(SpotifyAPIError, match="Search artists failed"):
-            list(api.search_artists("test"))
+    api._song.base.client.post.side_effect = Exception("fail")
+    with pytest.raises(SpotifyAPIError, match="Search artists failed"):
+        api.search_artists("test")
 
 
 # --- search_albums ---
@@ -101,12 +114,14 @@ def test_search_albums(api):
     mock_resp = MagicMock()
     mock_resp.fail = False
     mock_resp.response = {
-        "searchV2": {
-            "albumsV2": {
-                "items": [
-                    {"data": {"id": "al1", "name": "Album 1"}},
-                    {"data": {"name": "No ID"}},
-                ]
+        "data": {
+            "searchV2": {
+                "albumsV2": {
+                    "items": [
+                        {"data": {"id": "al1", "name": "Album 1"}},
+                        {"data": {"name": "No ID"}},
+                    ]
+                }
             }
         }
     }
@@ -137,11 +152,13 @@ def test_search_playlists(api):
     mock_resp = MagicMock()
     mock_resp.fail = False
     mock_resp.response = {
-        "searchV2": {
-            "playlistsV2": {
-                "items": [
-                    {"data": {"id": "pl1", "name": "Playlist 1"}},
-                ]
+        "data": {
+            "searchV2": {
+                "playlistsV2": {
+                    "items": [
+                        {"data": {"id": "pl1", "name": "Playlist 1"}},
+                    ]
+                }
             }
         }
     }
@@ -192,7 +209,7 @@ def test_get_track_unexpected_error(api):
 
 def test_get_artist(api):
     api._artist.get_artist.return_value = {
-        "data": {"artist": {"id": "ar1", "name": "Artist"}}
+        "data": {"artistUnion": {"id": "ar1", "name": "Artist"}}
     }
     result = api.get_artist("ar1")
     assert result["id"] == "ar1"

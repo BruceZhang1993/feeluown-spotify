@@ -264,9 +264,29 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
 
     def current_user_list_playlists(self):
         user = self.get_current_user()
-        if user is None:
+        if user is None or self._api is None:
             return []
-        return user.cache_get("playlists")[0] if user.cache_get("playlists")[1] else []
+        cached = user.cache_get("playlists")
+        if cached[1]:
+            return cached[0]
+        try:
+            raw = self._api.get_user_playlists()
+            playlists = []
+            for item in raw:
+                pl = item.get("data", item)
+                pid = pl.get("uri", "").rsplit(":", 1)[-1] or pl.get("id", "")
+                name = pl.get("name", "")
+                if pid and name:
+                    playlists.append(BriefPlaylistModel(
+                        identifier=pid,
+                        source=SOURCE,
+                        name=name,
+                    ))
+            user.cache_set("playlists", playlists)
+            return playlists
+        except Exception as e:
+            logger.warning(f"List playlists failed: {e}")
+            return []
 
     def current_user_fav_create_songs_rd(self):
         user = self.get_current_user()

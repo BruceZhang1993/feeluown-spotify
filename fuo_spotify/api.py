@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Generator, Mapping, Optional
+from typing import Mapping, Optional
 
 import spotapi
 
@@ -22,7 +22,8 @@ class SpotifyApi:
         try:
             result = self._song.query_songs(query, limit=limit, offset=offset)
             if isinstance(result, Mapping):
-                tracks = result.get("searchV2", {}).get("tracksV2", {}).get("items", [])
+                data = result.get("data", result)
+                tracks = data.get("searchV2", {}).get("tracksV2", {}).get("items", [])
                 songs = []
                 for item in tracks:
                     track_data = item.get("item", {}).get("data", {})
@@ -34,12 +35,41 @@ class SpotifyApi:
         except Exception as e:
             raise SpotifyAPIError(f"Search songs failed: {e}") from e
 
-    def search_artists(self, query: str) -> Generator[dict, None, None]:
+    def search_artists(self, query: str, limit: int = 10) -> list[dict]:
         logger.debug("Searching artists: query=%s", query)
         try:
-            results = list(spotapi.Public.artist_search(query))
-            logger.info("Search artists: query=%s, found=%d", query, len(results))
-            yield from results
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "searchDesktop",
+                "variables": json.dumps({
+                    "searchTerm": query,
+                    "offset": 0,
+                    "limit": limit,
+                    "numberOfTopResults": 5,
+                    "includeAudiobooks": False,
+                    "includeArtistHasConcertsField": False,
+                    "includePreReleases": False,
+                    "includeLocalConcertsField": False,
+                    "searchReturnConstructEntity": False,
+                    "includeAuthors": False,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("searchDesktop"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                raise SpotifyAPIError(f"Search artists failed: {resp.error.string}")
+            data = resp.response.get("data", {})
+            artists = data.get("searchV2", {}).get("artists", {}).get("items", [])
+            result = [a.get("data", a) for a in artists]
+            logger.info("Search artists: query=%s, found=%d", query, len(result))
+            return result
+        except SpotifyAPIError:
+            raise
         except Exception as e:
             raise SpotifyAPIError(f"Search artists failed: {e}") from e
 
@@ -71,7 +101,8 @@ class SpotifyApi:
             resp = self._song.base.client.post(url, params=params, authenticate=True)
             if resp.fail:
                 raise SpotifyAPIError(f"Search albums failed: {resp.error.string}")
-            albums = resp.response.get("searchV2", {}).get("albumsV2", {}).get("items", [])
+            data = resp.response.get("data", {})
+            albums = data.get("searchV2", {}).get("albumsV2", {}).get("items", [])
             result = [album.get("data", {}) for album in albums if album.get("data", {}).get("id")]
             logger.info("Search albums: query=%s, found=%d", query, len(result))
             return result
@@ -108,7 +139,8 @@ class SpotifyApi:
             resp = self._song.base.client.post(url, params=params, authenticate=True)
             if resp.fail:
                 raise SpotifyAPIError(f"Search playlists failed: {resp.error.string}")
-            playlists = resp.response.get("searchV2", {}).get("playlistsV2", {}).get("items", [])
+            data = resp.response.get("data", {})
+            playlists = data.get("searchV2", {}).get("playlistsV2", {}).get("items", [])
             result = [pl.get("data", {}) for pl in playlists if pl.get("data", {}).get("id")]
             logger.info("Search playlists: query=%s, found=%d", query, len(result))
             return result
@@ -135,7 +167,7 @@ class SpotifyApi:
         logger.debug("Getting artist: %s", artist_id)
         try:
             data = self._artist.get_artist(artist_id)
-            result = data.get("data", {}).get("artist", {})
+            result = data.get("data", {}).get("artistUnion", {})
             logger.info("Got artist: %s, name=%s", artist_id, result.get("profile", {}).get("name", ""))
             return result
         except Exception as e:
@@ -185,6 +217,47 @@ class SpotifyApi:
             return result
         except Exception as e:
             raise SpotifyAPIError(f"Get user info failed: {e}") from e
+
+    def get_user_playlists(self, limit: int = 50) -> list[dict]:
+        logger.debug("Getting user playlists: limit=%d", limit)
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "queryUserPlaylists",
+                "variables": json.dumps({
+                    "limit": limit,
+                    "offset": 0,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash(
+                            "queryUserPlaylists"
+                        ),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(
+                url, params=params, authenticate=True,
+            )
+            if resp.fail:
+                raise SpotifyAPIError(
+                    f"Get user playlists failed: {resp.error.string}"
+                )
+            data = resp.response.get("data", {})
+            playlists = data.get("me", {}).get(
+                "playlistsV2", {}
+            ).get("items", [])
+            logger.info(
+                "Got user playlists: count=%d", len(playlists),
+            )
+            return playlists
+        except SpotifyAPIError:
+            raise
+        except Exception as e:
+            raise SpotifyAPIError(
+                f"Get user playlists failed: {e}"
+            ) from e
 
     def like_song(self, track_id: str) -> bool:
         logger.debug("Liking song: %s", track_id)
