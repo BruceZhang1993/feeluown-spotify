@@ -19,6 +19,7 @@ dependencies = [
     "pydantic",
     "pymongo",
     "redis",
+    "browser-cookie3",
     "spotapi",
     "websockets",
 ]

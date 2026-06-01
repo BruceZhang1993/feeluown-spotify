@@ -2,6 +2,7 @@
 import logging
 from PyQt6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QVBoxLayout,
     QLabel,
     QLineEdit,
@@ -32,6 +33,12 @@ class LoginDialog(QDialog):
         self._cookie_input = QLineEdit()
         self._cookie_input.setPlaceholderText('{"sp_dc": "..."}')
         layout.addWidget(self._cookie_input)
+        extract_row = QHBoxLayout()
+        self._extract_btn = QPushButton("从浏览器提取")
+        self._extract_btn.clicked.connect(self._on_extract)
+        extract_row.addWidget(self._extract_btn)
+        extract_row.addStretch()
+        layout.addLayout(extract_row)
         self._login_btn = QPushButton("登录")
         self._login_btn.clicked.connect(self._on_login)
         layout.addWidget(self._login_btn)
@@ -57,6 +64,22 @@ class LoginDialog(QDialog):
             self._status_label.setText("Cookie 格式错误，请输入有效的 JSON")
         except Exception as e:
             self._status_label.setText(f"登录失败: {e}")
+
+    def _on_extract(self):
+        import json
+        from fuo_spotify.login import extract_browser_cookies
+        try:
+            self._extract_btn.setEnabled(False)
+            self._status_label.setText("正在从浏览器提取 Cookie …")
+            cookies = extract_browser_cookies()
+            self._cookie_input.setText(json.dumps(cookies))
+            self._status_label.setText(
+                "已提取，请填写邮箱后点击登录"
+            )
+        except Exception as e:
+            self._status_label.setText(f"提取失败: {e}")
+        finally:
+            self._extract_btn.setEnabled(True)
 
 
 class ProviderUI:

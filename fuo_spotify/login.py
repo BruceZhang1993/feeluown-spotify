@@ -32,6 +32,56 @@ def _make_config() -> spotapi.Config:
     return spotapi.Config(solver=_NoopSolver, logger=SpotapiLogger)
 
 
+_EXTRACT_BROWSERS = ["firefox", "chrome", "edge", "brave"]
+
+
+def extract_browser_cookies(
+    browser: Optional[str] = None,
+) -> dict:
+    """从本地浏览器提取 Spotify 认证 cookie。
+
+    Args:
+        browser: 浏览器名称，如 "firefox"、"chrome"。
+            为 None 时自动遍历常见浏览器。
+
+    Returns:
+        包含 sp_dc、sp_key、sp_t 等 key 的 dict。
+
+    Raises:
+        SpotifyAuthError: 所有浏览器均提取失败。
+    """
+    import browser_cookie3
+
+    names = [browser] if browser else _EXTRACT_BROWSERS
+    last_err: Optional[Exception] = None
+    for name in names:
+        func = getattr(browser_cookie3, name, None)
+        if func is None:
+            continue
+        try:
+            cj = func(domain_name=".spotify.com")
+            cookies = {
+                c.name: c.value
+                for c in cj
+                if c.name in _AUTH_COOKIE_KEYS
+            }
+            if "sp_dc" in cookies:
+                logger.info(
+                    "Extracted cookies from %s: keys=%s",
+                    name,
+                    list(cookies.keys()),
+                )
+                return cookies
+        except Exception as e:
+            last_err = e
+            logger.debug("Extract from %s failed: %s", name, e)
+            continue
+    raise SpotifyAuthError(
+        "无法从浏览器提取 cookie，请确认已在浏览器中登录 Spotify"
+        + (f" ({last_err})" if last_err else "")
+    )
+
+
 def _filter_cookies(cookies: dict) -> dict:
     return {
         k: v for k, v in cookies.items()
