@@ -56,7 +56,8 @@ class LoginManager:
     def login_with_cookies(self, identifier: str, cookies: dict) -> spotapi.Login:
         try:
             cfg = _make_config()
-            dump = {"identifier": identifier, "cookies": cookies}
+            filtered = _filter_cookies(cookies)
+            dump = {"identifier": identifier, "cookies": filtered}
             login = spotapi.Login.from_cookies(dump, cfg)
             self._login = login
             self._identifier = identifier
@@ -72,6 +73,16 @@ class LoginManager:
             with open(self._save_path, "r") as f:
                 data = json.load(f)
             cfg = _make_config()
+            if "cookies" in data:
+                data["cookies"] = _filter_cookies(
+                    data["cookies"]
+                )
+            else:
+                # 旧格式：整个文件就是 cookies dict
+                data = {
+                    "identifier": "",
+                    "cookies": _filter_cookies(data),
+                }
             login = spotapi.Login.from_cookies(data, cfg)
             self._login = login
             self._identifier = data.get("identifier")
