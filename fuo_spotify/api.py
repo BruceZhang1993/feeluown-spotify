@@ -185,13 +185,36 @@ class SpotifyApi:
             raise SpotifyAPIError(f"Get album failed: {e}") from e
 
     def get_playlist(self, playlist_id: str) -> dict:
+        """获取播放列表元数据及全部歌曲（自动分页）。"""
         logger.debug("Getting playlist: %s", playlist_id)
         try:
             public_playlist = spotapi.PublicPlaylist(playlist_id, client=self._client)
-            data = public_playlist.get_playlist_info()
-            result = data.get("data", {}).get("playlistV2", {})
-            logger.info("Got playlist: %s, name=%s", playlist_id, result.get("name", ""))
+            # 第一页：获取元数据 + 首批歌曲
+            first_page = public_playlist.get_playlist_info(limit=343)
+            playlist_v2 = first_page.get("data", {}).get("playlistV2", {})
+            content = playlist_v2.get("content", {})
+            all_items = list(content.get("items", []))
+            total_count = content.get("totalCount", len(all_items))
+            # 后续页：偏移量从已获取数量开始
+            offset = len(all_items)
+            while offset < total_count:
+                page = public_playlist.get_playlist_info(limit=343, offset=offset)
+                page_content = page.get("data", {}).get("playlistV2", {}).get("content", {})
+                page_items = page_content.get("items", [])
+                if not page_items:
+                    break
+                all_items.extend(page_items)
+                offset += len(page_items)
+            result = dict(playlist_v2)
+            result["content"] = {
+                "items": all_items,
+                "totalCount": total_count,
+            }
+            logger.info("Got playlist: %s, tracks=%d/%d",
+                        playlist_id, len(all_items), total_count)
             return result
+        except SpotifyAPIError:
+            raise
         except Exception as e:
             raise SpotifyAPIError(f"Get playlist failed: {e}") from e
 
