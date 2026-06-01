@@ -1,6 +1,7 @@
 # fuo_spotify/provider_ui.py
 import logging
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QVBoxLayout,
@@ -34,6 +35,11 @@ class LoginDialog(QDialog):
         self._cookie_input.setPlaceholderText('{"sp_dc": "..."}')
         layout.addWidget(self._cookie_input)
         extract_row = QHBoxLayout()
+        self._browser_combo = QComboBox()
+        from fuo_spotify.login import BROWSER_LABELS
+        for key, label in BROWSER_LABELS.items():
+            self._browser_combo.addItem(label, key)
+        extract_row.addWidget(self._browser_combo)
         self._extract_btn = QPushButton("从浏览器提取")
         self._extract_btn.clicked.connect(self._on_extract)
         extract_row.addWidget(self._extract_btn)
@@ -68,10 +74,11 @@ class LoginDialog(QDialog):
     def _on_extract(self):
         import json
         from fuo_spotify.login import extract_browser_cookies
+        browser = self._browser_combo.currentData()
         try:
             self._extract_btn.setEnabled(False)
             self._status_label.setText("正在从浏览器提取 Cookie …")
-            cookies = extract_browser_cookies()
+            cookies = extract_browser_cookies(browser)
             self._cookie_input.setText(json.dumps(cookies))
             self._status_label.setText(
                 "已提取，请填写邮箱后点击登录"

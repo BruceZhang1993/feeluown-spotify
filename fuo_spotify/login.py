@@ -32,7 +32,43 @@ def _make_config() -> spotapi.Config:
     return spotapi.Config(solver=_NoopSolver, logger=SpotapiLogger)
 
 
-_EXTRACT_BROWSERS = ["firefox", "chrome", "edge", "brave"]
+# 浏览器名称 → 显示标签
+BROWSER_LABELS: dict[str, str] = {
+    "zen": "Zen Browser",
+    "firefox": "Firefox",
+    "chrome": "Chrome",
+    "edge": "Edge",
+    "brave": "Brave",
+    "librewolf": "LibreWolf",
+    "vivaldi": "Vivaldi",
+}
+
+
+def _get_browser_func(name: str):
+    """返回指定浏览器的 cookie 提取函数。"""
+    import browser_cookie3
+
+    if name == "zen":
+        # Zen 基于 Firefox，但配置目录在 ~/.zen
+        class _Zen(browser_cookie3.FirefoxBased):
+            def __init__(self, cookie_file=None,
+                         domain_name="", key_file=None):
+                args = {
+                    "linux_data_dirs": ["~/.zen"],
+                    "osx_data_dirs": [
+                        "~/Library/Application Support/Zen"
+                    ],
+                    "windows_data_dirs": [
+                        {"env": "APPDATA", "path": "Zen"},
+                    ],
+                }
+                super().__init__(
+                    "Zen", cookie_file,
+                    domain_name, key_file, **args,
+                )
+
+        return _Zen
+    return getattr(browser_cookie3, name, None)
 
 
 def extract_browser_cookies(
@@ -41,7 +77,7 @@ def extract_browser_cookies(
     """从本地浏览器提取 Spotify 认证 cookie。
 
     Args:
-        browser: 浏览器名称，如 "firefox"、"chrome"。
+        browser: 浏览器名称，如 "firefox"、"zen"。
             为 None 时自动遍历常见浏览器。
 
     Returns:
@@ -50,12 +86,13 @@ def extract_browser_cookies(
     Raises:
         SpotifyAuthError: 所有浏览器均提取失败。
     """
-    import browser_cookie3
-
-    names = [browser] if browser else _EXTRACT_BROWSERS
+    names = (
+        [browser] if browser
+        else list(BROWSER_LABELS.keys())
+    )
     last_err: Optional[Exception] = None
     for name in names:
-        func = getattr(browser_cookie3, name, None)
+        func = _get_browser_func(name)
         if func is None:
             continue
         try:
