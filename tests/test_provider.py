@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 from feeluown.library import SearchType, SimpleSearchResult, SongModel, LyricModel, AlbumModel, ArtistModel, PlaylistModel
-from feeluown.media import Media, Quality
+from feeluown.media import Quality
 
 
 @pytest.fixture
@@ -119,42 +119,8 @@ def test_song_get_not_found(mock_api):
 
 # --- song_get_media ---
 
-def test_song_get_media(mock_api):
-    mock_api.get_track.return_value = {
-        "id": "track1",
-        "preview_url": "https://example.com/preview.mp3",
-    }
+def test_song_get_media():
     from fuo_spotify.provider import provider
-    provider._api = mock_api
-    song = MagicMock()
-    song.identifier = "track1"
-    media = provider.song_get_media(song, Quality.Audio("lq"))
-    assert isinstance(media, Media)
-    assert "preview.mp3" in media.url
-
-
-def test_song_get_media_no_api():
-    from fuo_spotify.provider import provider
-    provider._api = None
-    song = MagicMock()
-    result = provider.song_get_media(song, Quality.Audio("lq"))
-    assert result is None
-
-
-def test_song_get_media_no_preview(mock_api):
-    mock_api.get_track.return_value = {"id": "track1"}
-    from fuo_spotify.provider import provider
-    provider._api = mock_api
-    song = MagicMock()
-    song.identifier = "track1"
-    result = provider.song_get_media(song, Quality.Audio("lq"))
-    assert result is None
-
-
-def test_song_get_media_exception(mock_api):
-    mock_api.get_track.side_effect = Exception("fail")
-    from fuo_spotify.provider import provider
-    provider._api = mock_api
     song = MagicMock()
     song.identifier = "track1"
     result = provider.song_get_media(song, Quality.Audio("lq"))
@@ -470,26 +436,41 @@ def test_playlist_get_exception(mock_api):
 
 def test_playlist_get_empty_images(mock_api):
     mock_api.get_playlist.return_value = {
-        "identifier": {"id": "pl1"},
+        "uri": "spotify:playlist:pl1",
         "name": "Playlist",
         "images": {"items": []},
         "content": {"items": []},
     }
     from fuo_spotify.provider import provider
     provider._api = mock_api
-    from feeluown.excs import ModelNotFound
-    with pytest.raises(ModelNotFound):
-        provider.playlist_get("pl1")
+    result = provider.playlist_get("pl1")
+    assert result.name == "Playlist"
+    assert result.cover == ""
 
 
 # --- playlist_create_songs_rd ---
 
 def test_playlist_create_songs_rd(mock_api):
+    mock_api.get_playlist.return_value = {
+        "content": {
+            "items": [
+                {
+                    "itemV2": {
+                        "data": {
+                            "uri": "spotify:track:t1",
+                            "name": "Song 1",
+                            "artists": {"items": [{"profile": {"name": "A"}, "uri": "spotify:artist:a1"}]},
+                            "albumOfTrack": {"name": "Album", "uri": "spotify:album:al1", "coverArt": {"sources": []}},
+                            "trackDuration": {"totalMilliseconds": 180000},
+                        }
+                    }
+                }
+            ]
+        }
+    }
     from fuo_spotify.provider import provider
     provider._api = mock_api
     playlist = MagicMock()
-    playlist.cache_get.return_value = ([MagicMock()], True)
-    # 需要通过 _model_cache_get_or_fetch，简化测试
     playlist.identifier = "pl1"
     reader = provider.playlist_create_songs_rd(playlist)
     assert reader is not None

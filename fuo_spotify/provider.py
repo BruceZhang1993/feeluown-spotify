@@ -115,17 +115,7 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             raise ModelNotFound(f"Song {identifier} not found")
 
     def song_get_media(self, song, quality: Quality.Audio) -> Optional[Media]:
-        if self._api is None:
-            return None
-        try:
-            track_data = self._api.get_track(song.identifier)
-            preview_url = track_data.get("preview_url")
-            if preview_url:
-                return Media(preview_url, bitrate=128, format="mp3")
-            return None
-        except Exception as e:
-            logger.warning(f"Get song media failed: {e}")
-            return None
+        return None
 
     def song_list_quality(self, song) -> List[Quality.Audio]:
         return [Quality.Audio("lq")]
@@ -227,18 +217,22 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             tracks_data = data.get("content", {}).get("items", [])
             songs = []
             for item in tracks_data:
-                track = item.get("item", {}).get("data", {})
-                if track.get("id"):
+                track = item.get("itemV2", {}).get("data", {})
+                if track.get("uri", "").startswith("spotify:track:"):
                     try:
                         songs.append(_track_to_model(track))
                     except Exception:
                         continue
             from feeluown.library import PlaylistModel
+            uri = data.get("uri", "")
+            pid = uri.rsplit(":", 1)[-1] if uri else identifier
+            images_items = data.get("images", {}).get("items", [])
+            cover_sources = images_items[0].get("sources", []) if images_items else []
             return PlaylistModel(
-                identifier=data.get("identifier", {}).get("id", identifier),
+                identifier=pid,
                 source=SOURCE,
                 name=data.get("name", ""),
-                cover=_get_image_url(data.get("images", {}).get("items", [{}])[0].get("sources", [])),
+                cover=_get_image_url(cover_sources),
                 description=data.get("description", "") or "",
             )
         except ModelNotFound:
@@ -247,8 +241,23 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             raise ModelNotFound(f"Playlist {identifier} not found: {e}")
 
     def playlist_create_songs_rd(self, playlist):
-        songs = self._model_cache_get_or_fetch(playlist, "songs")
-        return create_reader(songs)
+        if self._api is None:
+            return create_reader([])
+        try:
+            data = self._api.get_playlist(playlist.identifier)
+            tracks_data = data.get("content", {}).get("items", []) if data else []
+            songs = []
+            for item in tracks_data:
+                track = item.get("itemV2", {}).get("data", {})
+                if track.get("uri", "").startswith("spotify:track:"):
+                    try:
+                        songs.append(_track_to_model(track))
+                    except Exception:
+                        continue
+            return create_reader(songs)
+        except Exception as e:
+            logger.warning(f"Get playlist songs failed: {e}")
+            return create_reader([])
 
     def playlist_add_song(self, playlist, song):
         if self._api is None:
@@ -295,10 +304,11 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         return create_reader([])
 
     def current_user_fav_create_playlists_rd(self):
+        # Spotify 没有独立的"收藏歌单"概念，libraryV3 已包含全部歌单
         user = self.get_current_user()
         if user is None:
             return create_reader([])
-        return create_reader(self.current_user_list_playlists())
+        return create_reader([])
 
     def rec_list_daily_songs(self):
         if self._api is None:
@@ -368,8 +378,15 @@ def _get_image_url(images: list) -> str:
 
 
 def _normalize_track_data(data: dict) -> dict:
-    """将 GraphQL 搜索返回的 track 数据规范化为 SpotifySong 可接受的格式。"""
+    """将 GraphQL 返回的 track 数据规范化为 SpotifySong 可接受的格式。"""
     result = dict(data)
+    # uri → id（歌单中的 track 用 uri 而非 id）
+    if "id" not in result and "uri" in result:
+        result["id"] = result["uri"].rsplit(":", 1)[-1]
+    # trackDuration.totalMilliseconds → duration_ms
+    duration = result.pop("trackDuration", None)
+    if isinstance(duration, dict) and "duration_ms" not in result:
+        result["duration_ms"] = duration.get("totalMilliseconds")
     # artists: {"items": [{"profile": {"name": ...}, "uri": ...}]} → [{"id": ..., "name": ...}]
     artists = result.get("artists")
     if isinstance(artists, dict):
@@ -384,11 +401,10 @@ def _normalize_track_data(data: dict) -> dict:
     # albumOfTrack → album，coverArt.sources → images
     album = result.pop("albumOfTrack", None)
     if isinstance(album, dict) and "album" not in result:
-        cover = album.get("coverArt", {})
         result["album"] = {
-            "id": album.get("id", ""),
+            "id": album.get("uri", "").rsplit(":", 1)[-1],
             "name": album.get("name", ""),
-            "images": cover.get("sources", []),
+            "images": album.get("coverArt", {}).get("sources", []),
         }
     return result
 

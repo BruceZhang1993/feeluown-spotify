@@ -107,6 +107,10 @@ class ProviderUI:
 
     def login_or_go_home(self):
         if self._login_manager.is_logged_in:
+            # 对齐 bilibili 模式：emit event 2（重新登录）
+            # 首次选择 provider 时 current_pvd_ui 为 None，handler 会刷新
+            # 后续点击 avatar 时 current_pvd_ui 已设置，handler 会跳过
+            self._login_event.emit(self, 2)
             return
         self._show_login_dialog()
 
@@ -125,11 +129,28 @@ class ProviderUI:
 
     def _on_login_accepted(self):
         from fuo_spotify.api import SpotifyApi
+        from feeluown.library import UserModel
 
         login = self._login_manager.login
-        if login is not None:
-            api = SpotifyApi(login)
-            self._provider.set_api(api)
+        if login is None:
+            return
+        api = SpotifyApi(login)
+        self._provider.set_api(api)
+        try:
+            user_info = api.get_user_info()
+            user = UserModel(
+                identifier=user_info.get("id", ""),
+                source="spotify",
+                name=user_info.get("display_name", ""),
+                avatar_url="",
+            )
+            # 直接设置用户，不触发 current_user_changed 信号
+            # （避免与 login_event 重复刷新播放列表）
+            self._provider._user = user
+            logger.info(f"Spotify user logged in: {user.name}")
+        except Exception as e:
+            logger.warning(f"Get user info failed: {e}")
+        # emit login_event → 框架的 on_provider_ui_login_event 刷新播放列表
         self._login_event.emit(self, 1)
 
     def get_status_text(self):

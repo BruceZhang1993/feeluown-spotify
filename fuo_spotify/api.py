@@ -219,21 +219,28 @@ class SpotifyApi:
             raise SpotifyAPIError(f"Get user info failed: {e}") from e
 
     def get_user_playlists(self, limit: int = 50) -> list[dict]:
+        """通过 libraryV3 操作获取用户播放列表。"""
         logger.debug("Getting user playlists: limit=%d", limit)
         try:
             url = "https://api-partner.spotify.com/pathfinder/v1/query"
             params = {
-                "operationName": "queryUserPlaylists",
+                "operationName": "libraryV3",
                 "variables": json.dumps({
+                    "filters": [],
+                    "order": None,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
                     "limit": limit,
                     "offset": 0,
+                    "flatten": False,
+                    "expandedFolders": [],
+                    "folderUri": None,
+                    "includeFoldersWhenFlattening": True,
                 }),
                 "extensions": json.dumps({
                     "persistedQuery": {
                         "version": 1,
-                        "sha256Hash": self._song.base.part_hash(
-                            "queryUserPlaylists"
-                        ),
+                        "sha256Hash": self._song.base.part_hash("libraryV3"),
                     }
                 }),
             }
@@ -245,9 +252,22 @@ class SpotifyApi:
                     f"Get user playlists failed: {resp.error.string}"
                 )
             data = resp.response.get("data", {})
-            playlists = data.get("me", {}).get(
-                "playlistsV2", {}
+            items = data.get("me", {}).get(
+                "libraryV3", {}
             ).get("items", [])
+            # libraryV3 返回的 items 包含多种类型（Playlist、Album、Artist 等），
+            # 只提取播放列表类型的 item
+            playlists = []
+            for item in items:
+                wrapper = item.get("item", {})
+                uri = wrapper.get("_uri", "")
+                if not uri.startswith("spotify:playlist:"):
+                    continue
+                data = wrapper.get("data", {})
+                pid = uri.rsplit(":", 1)[-1]
+                name = data.get("name", "")
+                if pid and name:
+                    playlists.append({"id": pid, "name": name})
             logger.info(
                 "Got user playlists: count=%d", len(playlists),
             )
