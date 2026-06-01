@@ -6,8 +6,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QTabWidget,
-    QWidget,
 )
 
 from feeluown.utils.dispatch import Signal
@@ -22,66 +20,37 @@ class LoginDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("Spotify 登录")
+        self.setWindowTitle("Spotify Cookie 登录")
         self.setMinimumWidth(400)
 
         layout = QVBoxLayout(self)
-        tabs = QTabWidget()
-
-        # 密码登录 Tab
-        password_tab = QWidget()
-        password_layout = QVBoxLayout(password_tab)
-        password_layout.addWidget(QLabel("用户名/邮箱:"))
-        self._username_input = QLineEdit()
-        self._username_input.setPlaceholderText("your@email.com")
-        password_layout.addWidget(self._username_input)
-        password_layout.addWidget(QLabel("密码:"))
-        self._password_input = QLineEdit()
-        self._password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        password_layout.addWidget(self._password_input)
+        layout.addWidget(QLabel("邮箱或用户名:"))
+        self._identifier_input = QLineEdit()
+        self._identifier_input.setPlaceholderText("user@example.com")
+        layout.addWidget(self._identifier_input)
+        layout.addWidget(QLabel("Cookie 数据 (JSON):"))
+        self._cookie_input = QLineEdit()
+        self._cookie_input.setPlaceholderText('{"sp_dc": "..."}')
+        layout.addWidget(self._cookie_input)
         self._login_btn = QPushButton("登录")
         self._login_btn.clicked.connect(self._on_login)
-        password_layout.addWidget(self._login_btn)
-        tabs.addTab(password_tab, "密码登录")
-
-        # Cookie 登录 Tab
-        cookie_tab = QWidget()
-        cookie_layout = QVBoxLayout(cookie_tab)
-        cookie_layout.addWidget(QLabel("Cookie 数据 (JSON):"))
-        self._cookie_input = QLineEdit()
-        self._cookie_input.setPlaceholderText('{"session": "..."}')
-        cookie_layout.addWidget(self._cookie_input)
-        self._cookie_login_btn = QPushButton("使用 Cookie 登录")
-        self._cookie_login_btn.clicked.connect(self._on_cookie_login)
-        cookie_layout.addWidget(self._cookie_login_btn)
-        tabs.addTab(cookie_tab, "Cookie 登录")
-
-        layout.addWidget(tabs)
+        layout.addWidget(self._login_btn)
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
 
     def _on_login(self):
-        username = self._username_input.text().strip()
-        password = self._password_input.text().strip()
-        if not username or not password:
-            self._status_label.setText("请输入用户名和密码")
-            return
-        try:
-            self._login_manager.login_with_password(username, password)
-            self._status_label.setText("登录成功!")
-            self.accept()
-        except Exception as e:
-            self._status_label.setText(f"登录失败: {e}")
-
-    def _on_cookie_login(self):
         import json
+        identifier = self._identifier_input.text().strip()
         cookie_text = self._cookie_input.text().strip()
+        if not identifier:
+            self._status_label.setText("请输入邮箱或用户名")
+            return
         if not cookie_text:
             self._status_label.setText("请输入 Cookie 数据")
             return
         try:
             cookies = json.loads(cookie_text)
-            self._login_manager.login_with_cookies(cookies)
+            self._login_manager.login_with_cookies(identifier, cookies)
             self._status_label.setText("登录成功!")
             self.accept()
         except json.JSONDecodeError:
@@ -125,6 +94,12 @@ class ProviderUI:
         self._dialog.show()
 
     def _on_login_accepted(self):
+        from fuo_spotify.api import SpotifyApi
+
+        login = self._login_manager.login
+        if login is not None:
+            api = SpotifyApi(login)
+            self._provider.set_api(api)
         self._login_event.emit(self, 1)
 
     def get_status_text(self):

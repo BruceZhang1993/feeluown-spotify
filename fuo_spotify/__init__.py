@@ -15,14 +15,14 @@ def enable(app):
     from fuo_spotify.api import SpotifyApi
 
     login_manager = LoginManager()
-    cfg = login_manager.restore_session()
+    login = login_manager.restore_session()
+    provider.set_login_manager(login_manager)
 
-    if cfg is None:
+    if login is None:
         logger.info("No saved Spotify session found")
     else:
-        api = SpotifyApi(cfg)
+        api = SpotifyApi(login)
         provider.set_api(api)
-        provider.set_login_manager(login_manager)
         try:
             user_info = api.get_user_info()
             from feeluown.library import UserModel

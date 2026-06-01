@@ -15,10 +15,12 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "feeluown>=4.1.16",
-    "pydantic>=2.0",
-    "spotapi>=1.2.7",
-    "websockets>=16.0",
+    "feeluown>=5.1",
+    "pydantic",
+    "pymongo",
+    "redis",
+    "spotapi",
+    "websockets",
 ]
 
 [project.urls]
@@ -31,6 +33,7 @@ spotify = "fuo_spotify"
 
 [dependency-groups]
 dev = [
+    "pyqt6",
     "pytest",
     "pytest-cov",
 ]

@@ -5,22 +5,22 @@ from fuo_spotify.excs import SpotifyAPIError, SpotifyTrackError
 
 
 @pytest.fixture
-def mock_cfg():
-    cfg = MagicMock()
-    cfg.client = MagicMock()
-    cfg.client.part_hash.return_value = "test_hash"
-    return cfg
+def mock_login():
+    login = MagicMock()
+    login.client = MagicMock()
+    return login
 
 
 @pytest.fixture
-def api(mock_cfg):
+def api(mock_login):
     with patch('fuo_spotify.api.spotapi') as mock_spotapi:
-        mock_spotapi.Song.return_value = MagicMock()
+        mock_song = MagicMock()
+        mock_song.base.part_hash.return_value = "test_hash"
+        mock_song.base.client = MagicMock()
+        mock_spotapi.Song.return_value = mock_song
         mock_spotapi.Artist.return_value = MagicMock()
-        mock_spotapi.PublicAlbum.return_value = MagicMock()
-        mock_spotapi.PublicPlaylist.return_value = MagicMock()
         mock_spotapi.User.return_value = MagicMock()
-        api = SpotifyApi(mock_cfg)
+        api = SpotifyApi(mock_login)
         return api
 
 
@@ -78,7 +78,7 @@ def test_search_songs_api_error(api):
 
 # --- search_artists ---
 
-def test_search_artists(api, mock_cfg):
+def test_search_artists(api):
     with patch('fuo_spotify.api.spotapi') as mock_spotapi:
         mock_spotapi.Public.artist_search.return_value = iter([
             {"id": "ar1", "name": "Artist 1"},
@@ -110,7 +110,7 @@ def test_search_albums(api):
             }
         }
     }
-    api._client.post.return_value = mock_resp
+    api._song.base.client.post.return_value = mock_resp
     results = api.search_albums("test")
     assert len(results) == 1
     assert results[0]["id"] == "al1"
@@ -120,13 +120,13 @@ def test_search_albums_api_fail(api):
     mock_resp = MagicMock()
     mock_resp.fail = True
     mock_resp.error.string = "bad request"
-    api._client.post.return_value = mock_resp
+    api._song.base.client.post.return_value = mock_resp
     with pytest.raises(SpotifyAPIError, match="Search albums failed"):
         api.search_albums("test")
 
 
 def test_search_albums_unexpected_error(api):
-    api._client.post.side_effect = Exception("timeout")
+    api._song.base.client.post.side_effect = Exception("timeout")
     with pytest.raises(SpotifyAPIError, match="Search albums failed"):
         api.search_albums("test")
 
@@ -145,7 +145,7 @@ def test_search_playlists(api):
             }
         }
     }
-    api._client.post.return_value = mock_resp
+    api._song.base.client.post.return_value = mock_resp
     results = api.search_playlists("test")
     assert len(results) == 1
     assert results[0]["id"] == "pl1"
@@ -155,13 +155,13 @@ def test_search_playlists_api_fail(api):
     mock_resp = MagicMock()
     mock_resp.fail = True
     mock_resp.error.string = "bad request"
-    api._client.post.return_value = mock_resp
+    api._song.base.client.post.return_value = mock_resp
     with pytest.raises(SpotifyAPIError, match="Search playlists failed"):
         api.search_playlists("test")
 
 
 def test_search_playlists_unexpected_error(api):
-    api._client.post.side_effect = Exception("timeout")
+    api._song.base.client.post.side_effect = Exception("timeout")
     with pytest.raises(SpotifyAPIError, match="Search playlists failed"):
         api.search_playlists("test")
 
@@ -207,33 +207,41 @@ def test_get_artist_error(api):
 # --- get_album ---
 
 def test_get_album(api):
-    api._public_album.get_album_info.return_value = {
+    mock_public_album = MagicMock()
+    mock_public_album.get_album_info.return_value = {
         "data": {"album": {"id": "al1", "name": "Album"}}
     }
-    result = api.get_album("al1")
+    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
+        mock_spotapi.PublicAlbum.return_value = mock_public_album
+        result = api.get_album("al1")
     assert result["id"] == "al1"
 
 
 def test_get_album_error(api):
-    api._public_album.get_album_info.side_effect = Exception("fail")
-    with pytest.raises(SpotifyAPIError, match="Get album failed"):
-        api.get_album("al1")
+    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
+        mock_spotapi.PublicAlbum.return_value.get_album_info.side_effect = Exception("fail")
+        with pytest.raises(SpotifyAPIError, match="Get album failed"):
+            api.get_album("al1")
 
 
 # --- get_playlist ---
 
 def test_get_playlist(api):
-    api._public_playlist.get_playlist_info.return_value = {
+    mock_public_playlist = MagicMock()
+    mock_public_playlist.get_playlist_info.return_value = {
         "data": {"playlistV2": {"id": "pl1", "name": "Playlist"}}
     }
-    result = api.get_playlist("pl1")
+    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
+        mock_spotapi.PublicPlaylist.return_value = mock_public_playlist
+        result = api.get_playlist("pl1")
     assert result["id"] == "pl1"
 
 
 def test_get_playlist_error(api):
-    api._public_playlist.get_playlist_info.side_effect = Exception("fail")
-    with pytest.raises(SpotifyAPIError, match="Get playlist failed"):
-        api.get_playlist("pl1")
+    with patch('fuo_spotify.api.spotapi') as mock_spotapi:
+        mock_spotapi.PublicPlaylist.return_value.get_playlist_info.side_effect = Exception("fail")
+        with pytest.raises(SpotifyAPIError, match="Get playlist failed"):
+            api.get_playlist("pl1")
 
 
 # --- get_lyrics ---
@@ -242,7 +250,7 @@ def test_get_lyrics_returns_none_on_failure(api):
     mock_resp = MagicMock()
     mock_resp.fail = True
     mock_resp.error.string = "Not found"
-    api._client.get.return_value = mock_resp
+    api._song.base.client.get.return_value = mock_resp
     result = api.get_lyrics("track1")
     assert result is None
 
@@ -251,13 +259,13 @@ def test_get_lyrics_returns_data_on_success(api):
     mock_resp = MagicMock()
     mock_resp.fail = False
     mock_resp.response = {"lyrics": {"lines": []}}
-    api._client.get.return_value = mock_resp
+    api._song.base.client.get.return_value = mock_resp
     result = api.get_lyrics("track1")
     assert result == {"lyrics": {"lines": []}}
 
 
 def test_get_lyrics_returns_none_on_exception(api):
-    api._client.get.side_effect = Exception("network error")
+    api._song.base.client.get.side_effect = Exception("network error")
     result = api.get_lyrics("track1")
     assert result is None
 

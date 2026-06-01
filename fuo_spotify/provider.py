@@ -274,6 +274,12 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             return create_reader([])
         return create_reader([])
 
+    def current_user_fav_create_playlists_rd(self):
+        user = self.get_current_user()
+        if user is None:
+            return create_reader([])
+        return create_reader(self.current_user_list_playlists())
+
     def rec_list_daily_songs(self):
         if self._api is None:
             return []
