@@ -241,20 +241,56 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             raise ModelNotFound(f"Playlist {identifier} not found: {e}")
 
     def playlist_create_songs_rd(self, playlist):
+        from feeluown.utils.reader import SequentialReader
+
         if self._api is None:
             return create_reader([])
-        try:
-            data = self._api.get_playlist(playlist.identifier)
-            tracks_data = data.get("content", {}).get("items", []) if data else []
-            songs = []
-            for item in tracks_data:
+
+        api = self._api
+        pid = playlist.identifier
+        page_size = 100
+
+        def _extract_tracks(data):
+            content = data.get("content", {})
+            for item in content.get("items", []):
                 track = item.get("itemV2", {}).get("data", {})
                 if track.get("uri", "").startswith("spotify:track:"):
                     try:
-                        songs.append(_track_to_model(track))
+                        yield _track_to_model(track)
                     except Exception:
                         continue
-            return create_reader(songs)
+
+        def _gen():
+            offset = 0
+            total = None
+            while total is None or offset < total:
+                data = api.get_playlist(pid, limit=page_size, offset=offset)
+                content = data.get("content", {})
+                if total is None:
+                    total = content.get("totalCount", 0)
+                items = content.get("items", [])
+                if not items:
+                    break
+                yield from _extract_tracks(data)
+                offset += len(items)
+
+        try:
+            # 预取第一页以获取 totalCount
+            first = api.get_playlist(pid, limit=page_size, offset=0)
+            total = first.get("content", {}).get("totalCount", 0)
+
+            def _gen_from_first():
+                yield from _extract_tracks(first)
+                offset = len(first.get("content", {}).get("items", []))
+                while offset < total:
+                    data = api.get_playlist(pid, limit=page_size, offset=offset)
+                    items = data.get("content", {}).get("items", [])
+                    if not items:
+                        break
+                    yield from _extract_tracks(data)
+                    offset += len(items)
+
+            return SequentialReader(_gen_from_first(), total)
         except Exception as e:
             logger.warning(f"Get playlist songs failed: {e}")
             return create_reader([])
