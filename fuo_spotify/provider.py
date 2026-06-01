@@ -367,11 +367,38 @@ def _get_image_url(images: list) -> str:
     return ""
 
 
+def _normalize_track_data(data: dict) -> dict:
+    """将 GraphQL 搜索返回的 track 数据规范化为 SpotifySong 可接受的格式。"""
+    result = dict(data)
+    # artists: {"items": [{"profile": {"name": ...}, "uri": ...}]} → [{"id": ..., "name": ...}]
+    artists = result.get("artists")
+    if isinstance(artists, dict):
+        items = artists.get("items", [])
+        result["artists"] = [
+            {
+                "id": a.get("uri", "").rsplit(":", 1)[-1],
+                "name": a.get("profile", {}).get("name", ""),
+            }
+            for a in items
+        ]
+    # albumOfTrack → album，coverArt.sources → images
+    album = result.pop("albumOfTrack", None)
+    if isinstance(album, dict) and "album" not in result:
+        cover = album.get("coverArt", {})
+        result["album"] = {
+            "id": album.get("id", ""),
+            "name": album.get("name", ""),
+            "images": cover.get("sources", []),
+        }
+    return result
+
+
 def _track_to_model(track_data: dict) -> "SongModel":
     from fuo_spotify.schemas import SpotifySong
     from feeluown.library import SongModel
 
-    song_data = SpotifySong.model_validate(track_data)
+    normalized = _normalize_track_data(track_data)
+    song_data = SpotifySong.model_validate(normalized)
     artists = []
     if song_data.artists:
         for a in song_data.artists:
