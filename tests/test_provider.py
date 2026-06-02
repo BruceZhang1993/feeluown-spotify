@@ -119,8 +119,21 @@ def test_song_get_not_found(mock_api):
 
 # --- song_get_media ---
 
-def test_song_get_media():
+def test_song_get_media(mock_api):
     from fuo_spotify.provider import provider
+    provider._api = mock_api
+    mock_api.get_track_stream_url.return_value = "https://example.com/audio.mp3"
+    song = MagicMock()
+    song.identifier = "track1"
+    result = provider.song_get_media(song, Quality.Audio("lq"))
+    assert result is not None
+    assert "example.com" in result.url
+
+
+def test_song_get_media_no_url(mock_api):
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    mock_api.get_track_stream_url.return_value = None
     song = MagicMock()
     song.identifier = "track1"
     result = provider.song_get_media(song, Quality.Audio("lq"))

@@ -114,8 +114,30 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         except SpotifyTrackError:
             raise ModelNotFound(f"Song {identifier} not found")
 
+    _CDN_HEADERS = {
+        "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64; rv:151.0) "
+                       "Gecko/20100101 Firefox/151.0"),
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,en-US;q=0.9,en;q=0.8",
+        "Referer": "https://open.spotify.com/",
+        "Origin": "https://open.spotify.com",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "cross-site",
+    }
+
     def song_get_media(self, song, quality: Quality.Audio) -> Optional[Media]:
-        return None
+        if self._api is None:
+            return None
+        try:
+            stream_url = self._api.get_track_stream_url(song.identifier)
+            if stream_url:
+                return Media(stream_url, bitrate=160, format="mp3",
+                             http_headers=self._CDN_HEADERS)
+            return None
+        except Exception as e:
+            logger.warning(f"Get song media failed: {e}")
+            return None
 
     def song_list_quality(self, song) -> List[Quality.Audio]:
         return [Quality.Audio("lq")]
