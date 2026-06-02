@@ -220,6 +220,32 @@ class SpotifyApi:
         except Exception as e:
             raise SpotifyAPIError(f"Get user info failed: {e}") from e
 
+    def get_current_user_profile(self) -> dict:
+        """通过 profileAttributes GraphQL 获取当前用户 profile（含头像和显示名）。"""
+        logger.debug("Getting current user profile via profileAttributes")
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "profileAttributes",
+                "variables": json.dumps({}),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("profileAttributes"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                logger.warning(f"Get current user profile failed: {resp.error.string}")
+                return {}
+            profile = resp.response.get("data", {}).get("me", {}).get("profile", {})
+            logger.info("Got current user profile: %s", profile.get("name", ""))
+            return profile
+        except Exception as e:
+            logger.warning(f"Get current user profile failed: {e}")
+            return {}
+
     def get_user_playlists(self, limit: int = 50) -> list[dict]:
         """通过 libraryV3 操作获取用户播放列表。"""
         logger.debug("Getting user playlists: limit=%d", limit)
@@ -328,3 +354,363 @@ class SpotifyApi:
         except Exception as e:
             logger.error(f"Get radio tracks failed: {e}")
             return []
+
+    # ---- 发现页面（使用 userTopContent 和 fetchPlaylistMetadata）----
+
+    def get_user_top_content(self, limit: int = 20) -> dict:
+        """通过 userTopContent 获取用户热门歌曲和歌手。"""
+        logger.debug("Getting user top content: limit=%d", limit)
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "userTopContent",
+                "variables": json.dumps({
+                    "topArtistsInput": {"limit": limit, "offset": 0},
+                    "topTracksInput": {"limit": limit, "offset": 0},
+                    "includeTopTracks": True,
+                    "includeTopArtists": True,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("userTopContent"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                logger.warning(f"Get user top content failed: {resp.error.string}")
+                return {}
+            data = resp.response.get("data", {}).get("me", {}).get("profile", {})
+            logger.info("Got user top content")
+            return data
+        except Exception as e:
+            logger.warning(f"Get user top content failed: {e}")
+            return {}
+
+    def get_top_tracks(self, limit: int = 20) -> list[dict]:
+        """获取用户热门歌曲（用于每日推荐/红心雷达）。"""
+        logger.debug("Getting top tracks")
+        try:
+            data = self.get_user_top_content(limit)
+            items = data.get("topTracks", {}).get("items", [])
+            tracks = []
+            for item in items:
+                track_data = item.get("data", {})
+                if track_data.get("uri", "").startswith("spotify:track:"):
+                    tracks.append(track_data)
+            logger.info("Got top tracks: count=%d", len(tracks))
+            return tracks
+        except Exception as e:
+            logger.warning(f"Get top tracks failed: {e}")
+            return []
+
+    def get_top_artists(self, limit: int = 20) -> list[dict]:
+        """获取用户热门歌手。"""
+        logger.debug("Getting top artists")
+        try:
+            data = self.get_user_top_content(limit)
+            items = data.get("topArtists", {}).get("items", [])
+            artists = []
+            for item in items:
+                artist_data = item.get("data", {})
+                uri = artist_data.get("uri", "")
+                if uri.startswith("spotify:artist:"):
+                    aid = uri.rsplit(":", 1)[-1]
+                    name = artist_data.get("profile", {}).get("name", "")
+                    images = artist_data.get("visuals", {}).get("avatarImage", {}).get("sources", [])
+                    pic_url = max(images, key=lambda s: s.get("width", 0)).get("url", "") if images else ""
+                    if aid and name:
+                        artists.append({"id": aid, "name": name, "pic_url": pic_url})
+            logger.info("Got top artists: count=%d", len(artists))
+            return artists
+        except Exception as e:
+            logger.warning(f"Get top artists failed: {e}")
+            return []
+
+    def get_fetch_playlist_metadata(self, playlist_uri: str) -> dict:
+        """通过 fetchPlaylistMetadata 获取歌单元数据。"""
+        logger.debug("Fetching playlist metadata: %s", playlist_uri)
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "fetchPlaylistMetadata",
+                "variables": json.dumps({
+                    "uri": playlist_uri,
+                    "enableWatchFeedEntrypoint": False,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("fetchPlaylistMetadata"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                logger.warning(f"Fetch playlist metadata failed: {resp.error.string}")
+                return {}
+            data = resp.response.get("data", {}).get("playlistV2", {})
+            logger.info("Fetched playlist metadata: %s", data.get("name", ""))
+            return data
+        except Exception as e:
+            logger.warning(f"Fetch playlist metadata failed: {e}")
+            return {}
+
+    # 已知的 Spotify 官方 Daily Mix / 推荐歌单 URI
+    _DAILY_MIX_URIS = [
+        "spotify:playlist:37i9dQZF1E3AFmNvSCnUvC",  # Daily Mix 1
+        "spotify:playlist:37i9dQZF1E39CIPVz2JxSS",  # Daily Mix 2
+        "spotify:playlist:37i9dQZF1E37CwNSRFKLRH",  # Daily Mix 3
+        "spotify:playlist:37i9dQZF1E3A8XMpXkBWRU",  # Daily Mix 4
+        "spotify:playlist:37i9dQZF1E35D2ZVOTNmEL",  # Daily Mix 5
+        "spotify:playlist:37i9dQZF1E3aQV6H0TO1bI",  # Daily Mix 6
+    ]
+
+    def get_daily_mix_playlists(self) -> list[dict]:
+        """获取 Daily Mix 系列歌单。"""
+        logger.debug("Getting daily mix playlists")
+        daily_mixes = []
+        for uri in self._DAILY_MIX_URIS:
+            try:
+                data = self.get_fetch_playlist_metadata(uri)
+                name = data.get("name", "")
+                if not name:
+                    continue
+                pid = uri.rsplit(":", 1)[-1]
+                images = data.get("images", {}).get("items", [])
+                cover = images[0].get("sources", [{}])[0].get("url", "") if images else ""
+                daily_mixes.append({
+                    "id": pid,
+                    "name": name,
+                    "cover": cover,
+                    "description": data.get("attributes", {}).get("description", ""),
+                })
+            except Exception:
+                continue
+        logger.info("Got daily mix playlists: count=%d", len(daily_mixes))
+        return daily_mixes
+
+    def get_recommendation_playlists(self) -> list[dict]:
+        """获取推荐歌单（Discover Weekly, Release Radar 等）。"""
+        logger.debug("Getting recommendation playlists")
+        rec_uris = [
+            "spotify:playlist:37i9dQZEVXcJjYFSYR3DjA",  # Discover Weekly
+            "spotify:playlist:37i9dQZEVXcWwQ7d1FPXPh",  # Release Radar
+            "spotify:playlist:37i9dQZEVXcMaGwUEMFBKQ",  # Repeat Rewind
+            "spotify:playlist:37i9dQZEVXcNCKj7ZI5qfM",  # Time Capsule
+        ]
+        rec_playlists = []
+        for uri in rec_uris:
+            try:
+                data = self.get_fetch_playlist_metadata(uri)
+                name = data.get("name", "")
+                if not name:
+                    continue
+                pid = uri.rsplit(":", 1)[-1]
+                images = data.get("images", {}).get("items", [])
+                cover = images[0].get("sources", [{}])[0].get("url", "") if images else ""
+                rec_playlists.append({
+                    "id": pid,
+                    "name": name,
+                    "cover": cover,
+                    "description": data.get("attributes", {}).get("description", ""),
+                })
+            except Exception:
+                continue
+        logger.info("Got recommendation playlists: count=%d", len(rec_playlists))
+        return rec_playlists
+
+    def get_charts(self) -> list[dict]:
+        """获取排行榜歌单。"""
+        logger.debug("Getting charts")
+        chart_uris = [
+            "spotify:playlist:37i9dQZEVXbMDoHDwVN2tF",  # Top 50 - Global
+            "spotify:playlist:37i9dQZEVXbKuaTI1Z1Afx",  # Viral 50 - Global
+            "spotify:playlist:37i9dQZEVXbIPWwFssbupI",  # Top 50 - Japan
+            "spotify:playlist:37i9dQZEVXbNFm4N5qvIqI",  # Viral 50 - Japan
+        ]
+        charts = []
+        for uri in chart_uris:
+            try:
+                data = self.get_fetch_playlist_metadata(uri)
+                name = data.get("name", "")
+                if not name:
+                    continue
+                pid = uri.rsplit(":", 1)[-1]
+                images = data.get("images", {}).get("items", [])
+                cover = images[0].get("sources", [{}])[0].get("url", "") if images else ""
+                charts.append({
+                    "id": pid,
+                    "name": name,
+                    "cover": cover,
+                    "description": data.get("attributes", {}).get("description", ""),
+                })
+            except Exception:
+                continue
+        logger.info("Got charts: count=%d", len(charts))
+        return charts
+
+    def get_heart_radar_tracks(self) -> list[dict]:
+        """获取红心雷达推荐歌曲（基于用户热门歌曲）。"""
+        logger.debug("Getting heart radar tracks")
+        try:
+            tracks = self.get_top_tracks(limit=20)
+            logger.info("Got heart radar tracks: count=%d", len(tracks))
+            return tracks
+        except Exception as e:
+            logger.warning(f"Get heart radar tracks failed: {e}")
+            return []
+
+    # ---- 我的收藏 ----
+
+    def get_saved_albums(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """获取用户收藏的专辑。"""
+        logger.debug("Getting saved albums: limit=%d, offset=%d", limit, offset)
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "libraryV3",
+                "variables": json.dumps({
+                    "filters": ["Albums"],
+                    "order": None,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
+                    "limit": limit,
+                    "offset": offset,
+                    "flatten": False,
+                    "expandedFolders": [],
+                    "folderUri": None,
+                    "includeFoldersWhenFlattening": True,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("libraryV3"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                raise SpotifyAPIError(f"Get saved albums failed: {resp.error.string}")
+            data = resp.response.get("data", {})
+            items = data.get("me", {}).get("libraryV3", {}).get("items", [])
+            albums = []
+            for item in items:
+                wrapper = item.get("item", {})
+                uri = wrapper.get("_uri", "")
+                if not uri.startswith("spotify:album:"):
+                    continue
+                album_data = wrapper.get("data", {})
+                aid = uri.rsplit(":", 1)[-1]
+                name = album_data.get("name", "")
+                artists = album_data.get("artists", {}).get("items", [])
+                artist_name = artists[0].get("profile", {}).get("name", "") if artists else ""
+                images = album_data.get("coverArt", {}).get("sources", [])
+                cover = images[0].get("url", "") if images else ""
+                if aid and name:
+                    albums.append({
+                        "id": aid,
+                        "name": name,
+                        "artist": artist_name,
+                        "cover": cover,
+                    })
+            logger.info("Got saved albums: count=%d", len(albums))
+            return albums
+        except SpotifyAPIError:
+            raise
+        except Exception as e:
+            raise SpotifyAPIError(f"Get saved albums failed: {e}") from e
+
+    def get_saved_artists(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """获取用户关注的歌手。"""
+        logger.debug("Getting saved artists: limit=%d, offset=%d", limit, offset)
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "libraryV3",
+                "variables": json.dumps({
+                    "filters": ["Artists"],
+                    "order": None,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
+                    "limit": limit,
+                    "offset": offset,
+                    "flatten": False,
+                    "expandedFolders": [],
+                    "folderUri": None,
+                    "includeFoldersWhenFlattening": True,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("libraryV3"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                raise SpotifyAPIError(f"Get saved artists failed: {resp.error.string}")
+            data = resp.response.get("data", {})
+            items = data.get("me", {}).get("libraryV3", {}).get("items", [])
+            artists = []
+            for item in items:
+                wrapper = item.get("item", {})
+                uri = wrapper.get("_uri", "")
+                if not uri.startswith("spotify:artist:"):
+                    continue
+                artist_data = wrapper.get("data", {})
+                aid = uri.rsplit(":", 1)[-1]
+                name = artist_data.get("profile", {}).get("name", "")
+                images = artist_data.get("visuals", {}).get("avatarImage", {}).get("sources", [])
+                pic_url = images[0].get("url", "") if images else ""
+                if aid and name:
+                    artists.append({
+                        "id": aid,
+                        "name": name,
+                        "pic_url": pic_url,
+                    })
+            logger.info("Got saved artists: count=%d", len(artists))
+            return artists
+        except SpotifyAPIError:
+            raise
+        except Exception as e:
+            raise SpotifyAPIError(f"Get saved artists failed: {e}") from e
+
+    def get_saved_tracks_count(self) -> int:
+        """获取用户收藏的歌曲数量。"""
+        logger.debug("Getting saved tracks count")
+        try:
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            params = {
+                "operationName": "libraryV3",
+                "variables": json.dumps({
+                    "filters": ["Tracks"],
+                    "order": None,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
+                    "limit": 1,
+                    "offset": 0,
+                    "flatten": False,
+                    "expandedFolders": [],
+                    "folderUri": None,
+                    "includeFoldersWhenFlattening": True,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._song.base.part_hash("libraryV3"),
+                    }
+                }),
+            }
+            resp = self._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                logger.warning(f"Get saved tracks count failed: {resp.error.string}")
+                return 0
+            data = resp.response.get("data", {})
+            total = data.get("me", {}).get("libraryV3", {}).get("totalCount", 0)
+            logger.info("Got saved tracks count: %d", total)
+            return total
+        except Exception as e:
+            logger.warning(f"Get saved tracks count failed: {e}")
+            return 0

@@ -129,7 +129,6 @@ class ProviderUI:
 
     def _on_login_accepted(self):
         from fuo_spotify.api import SpotifyApi
-        from feeluown.library import UserModel
 
         login = self._login_manager.login
         if login is None:
@@ -137,13 +136,7 @@ class ProviderUI:
         api = SpotifyApi(login)
         self._provider.set_api(api)
         try:
-            user_info = api.get_user_info()
-            user = UserModel(
-                identifier=user_info.get("id", ""),
-                source="spotify",
-                name=user_info.get("display_name", ""),
-                avatar_url="",
-            )
+            user = self._provider.user_info()
             # 直接设置用户，不触发 current_user_changed 信号
             # （避免与 login_event 重复刷新播放列表）
             self._provider._user = user

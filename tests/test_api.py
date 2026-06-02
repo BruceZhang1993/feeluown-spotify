@@ -368,3 +368,207 @@ def test_get_radio_tracks_error(api):
     api._song.playlist.side_effect = Exception("fail")
     result = api.get_radio_tracks("track1")
     assert result == []
+
+
+# --- get_current_user_profile ---
+
+def test_get_current_user_profile_success(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "me": {
+                "profile": {
+                    "name": "Test User",
+                    "username": "testuser",
+                    "avatar": {
+                        "sources": [
+                            {"height": 64, "url": "https://example.com/avatar_64.jpg", "width": 64},
+                            {"height": 300, "url": "https://example.com/avatar_300.jpg", "width": 300},
+                        ]
+                    },
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_current_user_profile()
+    assert result["name"] == "Test User"
+    assert result["username"] == "testuser"
+    assert result["avatar"]["sources"][0]["url"] == "https://example.com/avatar_64.jpg"
+
+
+def test_get_current_user_profile_failure(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = True
+    mock_resp.error.string = "Unauthorized"
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_current_user_profile()
+    assert result == {}
+
+
+def test_get_current_user_profile_exception(api):
+    api._song.base.client.post.side_effect = Exception("Network error")
+    result = api.get_current_user_profile()
+    assert result == {}
+
+
+# --- get_home_sections ---
+
+# --- get_user_top_content ---
+
+def test_get_user_top_content_success(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "me": {
+                "profile": {
+                    "topTracks": {
+                        "items": [
+                            {"data": {"uri": "spotify:track:t1", "name": "Song 1"}},
+                        ]
+                    },
+                    "topArtists": {
+                        "items": [
+                            {"data": {"uri": "spotify:artist:a1", "profile": {"name": "Artist 1"}}},
+                        ]
+                    },
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_user_top_content()
+    assert result["topTracks"]["items"][0]["data"]["name"] == "Song 1"
+
+
+def test_get_user_top_content_failure(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = True
+    mock_resp.error.string = "Error"
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_user_top_content()
+    assert result == {}
+
+
+# --- get_top_tracks ---
+
+def test_get_top_tracks_success(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "me": {
+                "profile": {
+                    "topTracks": {
+                        "items": [
+                            {"data": {"uri": "spotify:track:t1", "name": "Song 1"}},
+                            {"data": {"uri": "spotify:track:t2", "name": "Song 2"}},
+                        ]
+                    },
+                    "topArtists": {"items": []},
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_top_tracks()
+    assert len(result) == 2
+    assert result[0]["name"] == "Song 1"
+
+
+def test_get_top_tracks_failure(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = True
+    mock_resp.error.string = "Error"
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_top_tracks()
+    assert result == []
+
+
+# --- get_saved_albums ---
+
+def test_get_saved_albums_success(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "me": {
+                "libraryV3": {
+                    "items": [
+                        {
+                            "item": {
+                                "_uri": "spotify:album:al1",
+                                "data": {
+                                    "name": "Test Album",
+                                    "artists": {"items": [{"profile": {"name": "Artist 1"}}]},
+                                    "coverArt": {"sources": [{"url": "https://example.com/cover.jpg"}]},
+                                },
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_saved_albums()
+    assert len(result) == 1
+    assert result[0]["id"] == "al1"
+    assert result[0]["name"] == "Test Album"
+    assert result[0]["artist"] == "Artist 1"
+
+
+def test_get_saved_albums_failure(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = True
+    mock_resp.error.string = "Error"
+    api._song.base.client.post.return_value = mock_resp
+    with pytest.raises(SpotifyAPIError):
+        api.get_saved_albums()
+
+
+# --- get_saved_artists ---
+
+def test_get_saved_artists_success(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = False
+    mock_resp.response = {
+        "data": {
+            "me": {
+                "libraryV3": {
+                    "items": [
+                        {
+                            "item": {
+                                "_uri": "spotify:artist:ar1",
+                                "data": {
+                                    "profile": {"name": "Test Artist"},
+                                    "visuals": {
+                                        "avatarImage": {
+                                            "sources": [{"url": "https://example.com/artist.jpg"}]
+                                        }
+                                    },
+                                },
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    api._song.base.client.post.return_value = mock_resp
+    result = api.get_saved_artists()
+    assert len(result) == 1
+    assert result[0]["id"] == "ar1"
+    assert result[0]["name"] == "Test Artist"
+    assert result[0]["pic_url"] == "https://example.com/artist.jpg"
+
+
+def test_get_saved_artists_failure(api):
+    mock_resp = MagicMock()
+    mock_resp.fail = True
+    mock_resp.error.string = "Error"
+    api._song.base.client.post.return_value = mock_resp
+    with pytest.raises(SpotifyAPIError):
+        api.get_saved_artists()

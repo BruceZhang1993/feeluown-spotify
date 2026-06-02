@@ -21,13 +21,19 @@ from feeluown.library import (
     SupportsCurrentUser,
     SupportsCurrentUserListPlaylists,
     SupportsCurrentUserFavSongsReader,
+    SupportsCurrentUserFavAlbumsReader,
+    SupportsCurrentUserFavArtistsReader,
     SupportsRecListDailySongs,
     SupportsRecListDailyPlaylists,
+    SupportsRecListCollections,
+    SupportsRecACollectionOfSongs,
     SimpleSearchResult,
     SearchType,
     ModelType,
     UserModel,
     LyricModel,
+    Collection,
+    CollectionType,
 )
 from feeluown.media import Media, Quality
 from feeluown.utils.reader import create_reader
@@ -53,8 +59,12 @@ class Supports(
     SupportsCurrentUser,
     SupportsCurrentUserListPlaylists,
     SupportsCurrentUserFavSongsReader,
+    SupportsCurrentUserFavAlbumsReader,
+    SupportsCurrentUserFavArtistsReader,
     SupportsRecListDailySongs,
     SupportsRecListDailyPlaylists,
+    SupportsRecListCollections,
+    SupportsRecACollectionOfSongs,
     Protocol,
 ):
     pass
@@ -65,8 +75,11 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         identifier = PROVIDER_ID
         name = PROVIDER_NAME
         flags = {
-            ModelType.song: PF.similar,
+            ModelType.song: PF.similar | PF.get | PF.model_v2,
             ModelType.none: PF.current_user,
+            ModelType.album: PF.get | PF.songs_rd | PF.albums_rd | PF.model_v2 | PF.web_url,
+            ModelType.artist: PF.get | PF.artists_rd | PF.model_v2 | PF.web_url,
+            ModelType.playlist: PF.get | PF.songs_rd | PF.model_v2 | PF.web_url,
         }
 
     def __init__(self):
@@ -98,6 +111,44 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
 
     def set_login_manager(self, login_manager):
         self._login_manager = login_manager
+
+    def user_info(self) -> UserModel:
+        """获取当前用户信息（含头像），参考 feeluown-bilibili 的实现模式。"""
+        if self._api is None:
+            raise SpotifyAPIError("API not initialized")
+
+        # 通过 profileAttributes GraphQL 获取用户名和头像
+        display_name = ""
+        avatar_url = ""
+        identifier = ""
+        try:
+            profile = self._api.get_current_user_profile()
+            # profileAttributes 返回: {"name": "...", "username": "...", "avatar": {"sources": [...]}}
+            display_name = profile.get("name", "")
+            identifier = profile.get("username", "")
+            avatar_sources = profile.get("avatar", {}).get("sources", [])
+            if avatar_sources:
+                # 取最大尺寸的头像
+                avatar_url = max(avatar_sources, key=lambda s: s.get("width", 0)).get("url", "")
+        except Exception as e:
+            logger.debug(f"Get user profile from profileAttributes failed (non-fatal): {e}")
+
+        # 回退：从 account-settings API 获取 identifier
+        if not identifier:
+            try:
+                user_info = self._api.get_user_info()
+                identifier = user_info.get("profile", {}).get("username", "")
+            except Exception:
+                pass
+
+        logger.info(f"User info: id={identifier}, name={display_name}, avatar={'yes' if avatar_url else 'no'}")
+
+        return UserModel(
+            identifier=identifier,
+            source=SOURCE,
+            name=display_name,
+            avatar_url=avatar_url,
+        )
 
     def has_current_user(self):
         return self._user is not None
@@ -335,9 +386,55 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
 
     def current_user_fav_create_songs_rd(self):
         user = self.get_current_user()
-        if user is None:
+        if user is None or self._api is None:
             return create_reader([])
-        return create_reader([])
+        try:
+            # 通过 libraryV3 获取收藏的歌曲
+            url = "https://api-partner.spotify.com/pathfinder/v1/query"
+            import json
+            params = {
+                "operationName": "libraryV3",
+                "variables": json.dumps({
+                    "filters": ["Tracks"],
+                    "order": None,
+                    "textFilter": "",
+                    "features": ["LIKED_SONGS", "YOUR_EPISODES", "PRERELEASES"],
+                    "limit": 50,
+                    "offset": 0,
+                    "flatten": False,
+                    "expandedFolders": [],
+                    "folderUri": None,
+                    "includeFoldersWhenFlattening": True,
+                }),
+                "extensions": json.dumps({
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": self._api._song.base.part_hash("libraryV3"),
+                    }
+                }),
+            }
+            resp = self._api._song.base.client.post(url, params=params, authenticate=True)
+            if resp.fail:
+                logger.warning(f"Get saved tracks failed: {resp.error.string}")
+                return create_reader([])
+            data = resp.response.get("data", {})
+            items = data.get("me", {}).get("libraryV3", {}).get("items", [])
+            songs = []
+            for item in items:
+                wrapper = item.get("item", {})
+                uri = wrapper.get("_uri", "")
+                if not uri.startswith("spotify:track:"):
+                    continue
+                track_data = wrapper.get("data", {})
+                if track_data.get("id") or uri:
+                    try:
+                        songs.append(_track_to_model(track_data))
+                    except Exception:
+                        continue
+            return create_reader(songs)
+        except Exception as e:
+            logger.warning(f"Get saved tracks failed: {e}")
+            return create_reader([])
 
     def current_user_fav_create_playlists_rd(self):
         # Spotify 没有独立的"收藏歌单"概念，libraryV3 已包含全部歌单
@@ -346,6 +443,49 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             return create_reader([])
         return create_reader([])
 
+    def current_user_fav_create_albums_rd(self):
+        user = self.get_current_user()
+        if user is None or self._api is None:
+            return create_reader([])
+        try:
+            albums_data = self._api.get_saved_albums()
+            albums = []
+            for album_data in albums_data:
+                try:
+                    albums.append(BriefAlbumModel(
+                        identifier=album_data.get("id", ""),
+                        source=SOURCE,
+                        name=album_data.get("name", ""),
+                        artists_name=album_data.get("artist", ""),
+                    ))
+                except Exception:
+                    continue
+            return create_reader(albums)
+        except Exception as e:
+            logger.warning(f"Get saved albums failed: {e}")
+            return create_reader([])
+
+    def current_user_fav_create_artists_rd(self):
+        user = self.get_current_user()
+        if user is None or self._api is None:
+            return create_reader([])
+        try:
+            artists_data = self._api.get_saved_artists()
+            artists = []
+            for artist_data in artists_data:
+                try:
+                    artists.append(BriefArtistModel(
+                        identifier=artist_data.get("id", ""),
+                        source=SOURCE,
+                        name=artist_data.get("name", ""),
+                    ))
+                except Exception:
+                    continue
+            return create_reader(artists)
+        except Exception as e:
+            logger.warning(f"Get saved artists failed: {e}")
+            return create_reader([])
+
     def rec_list_daily_songs(self):
         if self._api is None:
             return []
@@ -353,7 +493,15 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             user = self.get_current_user()
             if user is None:
                 return []
-            return []
+            # 通过 userTopContent 获取热门歌曲作为每日推荐
+            tracks = self._api.get_top_tracks(limit=30)
+            songs = []
+            for track in tracks:
+                try:
+                    songs.append(_track_to_model(track))
+                except Exception:
+                    continue
+            return songs
         except Exception as e:
             logger.warning(f"Get daily songs failed: {e}")
             return []
@@ -365,10 +513,117 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             user = self.get_current_user()
             if user is None:
                 return []
-            return []
+            # 获取推荐歌单
+            rec_playlists = self._api.get_recommendation_playlists()
+            playlists = []
+            for pl_data in rec_playlists:
+                try:
+                    playlists.append(BriefPlaylistModel(
+                        identifier=pl_data.get("id", ""),
+                        source=SOURCE,
+                        name=pl_data.get("name", ""),
+                    ))
+                except Exception:
+                    continue
+            return playlists
         except Exception as e:
             logger.warning(f"Get daily playlists failed: {e}")
             return []
+
+    def rec_list_collections(self, limit: int = None) -> list:
+        """返回推荐集合（每日推荐、排行榜、红心雷达等）。"""
+        if self._api is None:
+            return []
+        try:
+            user = self.get_current_user()
+            if user is None:
+                return []
+            collections = []
+
+            # 1. 每日推荐歌曲
+            try:
+                daily_songs = self.rec_list_daily_songs()
+                if daily_songs:
+                    collections.append(Collection(
+                        name="每日推荐",
+                        type_=CollectionType.only_songs,
+                        models=daily_songs,
+                        description="根据你的收听习惯生成的每日推荐歌曲",
+                    ))
+            except Exception as e:
+                logger.warning(f"Get daily songs collection failed: {e}")
+
+            # 2. 推荐歌单
+            try:
+                daily_playlists = self.rec_list_daily_playlists()
+                if daily_playlists:
+                    collections.append(Collection(
+                        name="推荐歌单",
+                        type_=CollectionType.only_playlists,
+                        models=daily_playlists,
+                        description="为你精选的个性化歌单",
+                    ))
+            except Exception as e:
+                logger.warning(f"Get daily playlists collection failed: {e}")
+
+            # 3. 排行榜
+            try:
+                charts = self._api.get_charts()
+                chart_playlists = []
+                for chart_data in charts:
+                    try:
+                        chart_playlists.append(BriefPlaylistModel(
+                            identifier=chart_data.get("id", ""),
+                            source=SOURCE,
+                            name=chart_data.get("name", ""),
+                        ))
+                    except Exception:
+                        continue
+                if chart_playlists:
+                    collections.append(Collection(
+                        name="排行榜",
+                        type_=CollectionType.only_playlists,
+                        models=chart_playlists,
+                        description="热门排行榜歌单",
+                    ))
+            except Exception as e:
+                logger.warning(f"Get charts collection failed: {e}")
+
+            if limit is not None:
+                collections = collections[:limit]
+            return collections
+        except Exception as e:
+            logger.warning(f"Get collections failed: {e}")
+            return []
+
+    def rec_a_collection_of_songs(self) -> Optional[Collection]:
+        """返回红心雷达（基于 Daily Mix 的推荐歌曲）。"""
+        if self._api is None:
+            return None
+        try:
+            user = self.get_current_user()
+            if user is None:
+                return None
+            heart_radar_tracks = self._api.get_heart_radar_tracks()
+            if not heart_radar_tracks:
+                return None
+            songs = []
+            for track in heart_radar_tracks:
+                try:
+                    songs.append(_track_to_model(track))
+                except Exception:
+                    continue
+            if not songs:
+                return None
+            return Collection(
+                name="红心雷达",
+                type_=CollectionType.only_songs,
+                models=songs,
+                description="基于你喜欢的歌曲生成的推荐",
+            )
+        except Exception as e:
+            logger.warning(f"Get heart radar failed: {e}")
+            return None
 
 
 provider = SpotifyProvider()

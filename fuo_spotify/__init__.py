@@ -24,14 +24,7 @@ def enable(app):
         api = SpotifyApi(login)
         provider.set_api(api)
         try:
-            user_info = api.get_user_info()
-            from feeluown.library import UserModel
-            user = UserModel(
-                identifier=user_info.get("id", ""),
-                source="spotify",
-                name=user_info.get("display_name", ""),
-                avatar_url="",
-            )
+            user = provider.user_info()
             provider.auth(user)
             logger.info(f"Spotify user logged in: {user.name}")
         except Exception as e:

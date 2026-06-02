@@ -675,3 +675,184 @@ def test_provider_identifier():
 def test_provider_name():
     from fuo_spotify.provider import provider
     assert provider.name == "Spotify"
+
+
+# --- current_user_fav_create_albums_rd ---
+
+def test_current_user_fav_create_albums_rd_no_user():
+    from fuo_spotify.provider import provider
+    provider._user = None
+    reader = provider.current_user_fav_create_albums_rd()
+    assert list(reader) == []
+
+
+def test_current_user_fav_create_albums_rd_no_api():
+    from fuo_spotify.provider import provider
+    provider._user = MagicMock()
+    provider._api = None
+    reader = provider.current_user_fav_create_albums_rd()
+    assert list(reader) == []
+
+
+def test_current_user_fav_create_albums_rd_with_data(mock_api):
+    mock_api.get_saved_albums.return_value = [
+        {"id": "al1", "name": "Album 1", "artist": "Artist 1"},
+        {"id": "al2", "name": "Album 2", "artist": "Artist 2"},
+    ]
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    reader = provider.current_user_fav_create_albums_rd()
+    albums = list(reader)
+    assert len(albums) == 2
+    assert albums[0].identifier == "al1"
+    assert albums[0].artists_name == "Artist 1"
+    assert albums[1].name == "Album 2"
+    assert albums[1].artists_name == "Artist 2"
+
+
+def test_current_user_fav_create_albums_rd_exception(mock_api):
+    mock_api.get_saved_albums.side_effect = Exception("fail")
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    reader = provider.current_user_fav_create_albums_rd()
+    assert list(reader) == []
+
+
+# --- current_user_fav_create_artists_rd ---
+
+def test_current_user_fav_create_artists_rd_no_user():
+    from fuo_spotify.provider import provider
+    provider._user = None
+    reader = provider.current_user_fav_create_artists_rd()
+    assert list(reader) == []
+
+
+def test_current_user_fav_create_artists_rd_no_api():
+    from fuo_spotify.provider import provider
+    provider._user = MagicMock()
+    provider._api = None
+    reader = provider.current_user_fav_create_artists_rd()
+    assert list(reader) == []
+
+
+def test_current_user_fav_create_artists_rd_with_data(mock_api):
+    mock_api.get_saved_artists.return_value = [
+        {"id": "ar1", "name": "Artist 1"},
+        {"id": "ar2", "name": "Artist 2"},
+    ]
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    reader = provider.current_user_fav_create_artists_rd()
+    artists = list(reader)
+    assert len(artists) == 2
+    assert artists[0].identifier == "ar1"
+    assert artists[1].name == "Artist 2"
+
+
+def test_current_user_fav_create_artists_rd_exception(mock_api):
+    mock_api.get_saved_artists.side_effect = Exception("fail")
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    reader = provider.current_user_fav_create_artists_rd()
+    assert list(reader) == []
+
+
+# --- rec_list_collections ---
+
+def test_rec_list_collections_no_api():
+    from fuo_spotify.provider import provider
+    provider._api = None
+    result = provider.rec_list_collections()
+    assert result == []
+
+
+def test_rec_list_collections_no_user(mock_api):
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = None
+    result = provider.rec_list_collections()
+    assert result == []
+
+
+def test_rec_list_collections_with_data(mock_api):
+    mock_api.get_daily_mix_playlists.return_value = [
+        {"id": "mix1", "name": "Daily Mix 1", "cover": "", "description": ""},
+    ]
+    mock_api.get_playlist.return_value = {
+        "content": {
+            "items": [
+                {
+                    "itemV2": {
+                        "data": {
+                            "uri": "spotify:track:t1",
+                            "name": "Song 1",
+                            "artists": {"items": [{"profile": {"name": "A"}, "uri": "spotify:artist:a1"}]},
+                            "albumOfTrack": {"name": "Album", "uri": "spotify:album:al1", "coverArt": {"sources": []}},
+                            "trackDuration": {"totalMilliseconds": 180000},
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    mock_api.get_recommendation_playlists.return_value = [
+        {"id": "rec1", "name": "Recommended Playlist", "cover": "", "description": ""},
+    ]
+    mock_api.get_charts.return_value = [
+        {"id": "chart1", "name": "Top 50", "cover": "", "description": ""},
+    ]
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    result = provider.rec_list_collections()
+    # 应该返回至少 2 个 collection（每日推荐、推荐歌单、排行榜）
+    assert len(result) >= 2
+
+
+# --- rec_a_collection_of_songs ---
+
+def test_rec_a_collection_of_songs_no_api():
+    from fuo_spotify.provider import provider
+    provider._api = None
+    result = provider.rec_a_collection_of_songs()
+    assert result is None
+
+
+def test_rec_a_collection_of_songs_no_user(mock_api):
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = None
+    result = provider.rec_a_collection_of_songs()
+    assert result is None
+
+
+def test_rec_a_collection_of_songs_with_data(mock_api):
+    mock_api.get_heart_radar_tracks.return_value = [
+        {
+            "uri": "spotify:track:t1",
+            "name": "Song 1",
+            "artists": {"items": [{"profile": {"name": "A"}, "uri": "spotify:artist:a1"}]},
+            "albumOfTrack": {"name": "Album", "uri": "spotify:album:al1", "coverArt": {"sources": []}},
+            "trackDuration": {"totalMilliseconds": 180000},
+        }
+    ]
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    result = provider.rec_a_collection_of_songs()
+    assert result is not None
+    assert result.name == "红心雷达"
+    assert len(result.models) == 1
+
+
+def test_rec_a_collection_of_songs_empty(mock_api):
+    mock_api.get_heart_radar_tracks.return_value = []
+    from fuo_spotify.provider import provider
+    provider._api = mock_api
+    provider._user = MagicMock()
+    result = provider.rec_a_collection_of_songs()
+    assert result is None
