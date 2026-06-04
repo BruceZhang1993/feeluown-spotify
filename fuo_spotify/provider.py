@@ -89,6 +89,26 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
 
     def _(self) -> Supports:
         return self
+    
+    def auto_login(self):
+        from fuo_spotify.login import LoginManager
+        from fuo_spotify.api import SpotifyApi
+
+        login_manager = LoginManager()
+        login = login_manager.restore_session()
+        self.set_login_manager(login_manager)
+
+        if login is None:
+            logger.info("No saved Spotify session found")
+        else:
+            api = SpotifyApi(login)
+            self.set_api(api)
+            try:
+                user = self.user_info()
+                self.auth(user)
+                logger.info(f"Spotify user logged in: {user.name}")
+            except Exception as e:
+                logger.warning(f"Auto login failed: {e}")
 
     @property
     def identifier(self):

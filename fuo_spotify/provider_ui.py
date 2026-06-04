@@ -90,9 +90,8 @@ class LoginDialog(QDialog):
 
 
 class ProviderUI:
-    def __init__(self, app, login_manager, provider):
+    def __init__(self, app, provider):
         self._app = app
-        self._login_manager = login_manager
         self._provider = provider
         self._dialog = None
         self._login_event = Signal("login_event")
@@ -106,7 +105,7 @@ class ProviderUI:
         return self._login_event
 
     def login_or_go_home(self):
-        if self._login_manager.is_logged_in:
+        if self.provider._login_manager.is_logged_in:
             # 对齐 bilibili 模式：emit event 2（重新登录）
             # 首次选择 provider 时 current_pvd_ui 为 None，handler 会刷新
             # 后续点击 avatar 时 current_pvd_ui 已设置，handler 会跳过
@@ -123,14 +122,14 @@ class ProviderUI:
 
     def _show_login_dialog(self):
         if self._dialog is None:
-            self._dialog = LoginDialog(self._login_manager, self._app)
+            self._dialog = LoginDialog(self.provider._login_manager, self._app)
             self._dialog.accepted.connect(self._on_login_accepted)
         self._dialog.show()
 
     def _on_login_accepted(self):
         from fuo_spotify.api import SpotifyApi
 
-        login = self._login_manager.login
+        login = self.provider._login_manager.login
         if login is None:
             return
         api = SpotifyApi(login)
@@ -147,7 +146,7 @@ class ProviderUI:
         self._login_event.emit(self, 1)
 
     def get_status_text(self):
-        if self._login_manager.is_logged_in:
+        if self.provider._login_manager.is_logged_in:
             user = self._provider.get_current_user()
             if user:
                 return f"Spotify: {user.name}"
