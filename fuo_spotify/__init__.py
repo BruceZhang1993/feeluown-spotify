@@ -17,6 +17,7 @@ def enable(app):
     login_manager = LoginManager()
     login = login_manager.restore_session()
     provider.set_login_manager(login_manager)
+    provider.set_app(app)
 
     if login is None:
         logger.info("No saved Spotify session found")

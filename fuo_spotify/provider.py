@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import List, Optional, Protocol
 
 from feeluown.excs import ModelNotFound
@@ -73,9 +74,16 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         super().__init__()
         self._api = None
         self._login_manager = None
+        self._app = None
 
-    def _(self) -> Supports:
-        return self
+    def set_api(self, api):
+        self._api = api
+
+    def set_login_manager(self, login_manager):
+        self._login_manager = login_manager
+
+    def set_app(self, app):
+        self._app = app
 
     @property
     def identifier(self):
@@ -92,12 +100,6 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             ModelType.artist,
             ModelType.playlist,
         )
-
-    def set_api(self, api):
-        self._api = api
-
-    def set_login_manager(self, login_manager):
-        self._login_manager = login_manager
 
     def has_current_user(self):
         return self._user is not None
@@ -130,14 +132,80 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         if self._api is None:
             return None
         try:
+            # 先尝试获取未加密的 CDN URL
             stream_url = self._api.get_track_stream_url(song.identifier)
             if stream_url:
                 return Media(stream_url, bitrate=160, format="mp3",
                              http_headers=self._CDN_HEADERS)
+
+            # 未加密文件不可用，尝试 Widevine 解密
+            wvd_path = self._get_wvd_path()
+            if wvd_path:
+                return self._play_via_widevine(song.identifier, wvd_path)
+
+            logger.debug("No unencrypted URL and no wvd_path configured")
             return None
         except Exception as e:
             logger.warning(f"Get song media failed: {e}")
             return None
+
+    def _get_wvd_path(self) -> Optional[str]:
+        """从配置文件获取 .wvd 设备文件路径。"""
+        import json
+        config_path = Path.home() / ".feeluown" / "spotify_config.json"
+        if not config_path.exists():
+            return None
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            path = config.get("wvd_path", "")
+            return path if path and Path(path).exists() else None
+        except Exception:
+            return None
+
+    def _play_via_widevine(self, track_id: str, wvd_path: str) -> Optional[Media]:
+        """通过 Widevine 获取解密 key，设置 mpv 选项，返回加密 CDN URL。"""
+        try:
+            from fuo_spotify.widevine import get_seektable, get_cdn_url, get_widevine_key
+
+            file_id = self._api.get_encrypted_file_id(track_id)
+            if not file_id:
+                logger.warning("No encrypted file_id for %s", track_id)
+                return None
+
+            file_id_hex = file_id.hex()
+            auth_token, client_token = self._api.get_auth_and_client_token()
+
+            seektable = get_seektable(file_id_hex)
+            cdn_url = get_cdn_url(file_id_hex, auth_token, client_token)
+
+            pssh_str = seektable["pssh"]["widevine"]
+            key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
+
+            self._set_mpv_decrypt_key(key_hex)
+
+            logger.info("Widevine: key=%s cdn=%s", key_hex, cdn_url[:60])
+            return Media(cdn_url, bitrate=320, format="mp4",
+                         http_headers=self._CDN_HEADERS)
+        except Exception as e:
+            logger.warning(f"Widevine playback failed for {track_id}: {e}")
+            return None
+
+    def _set_mpv_decrypt_key(self, key_hex: str) -> None:
+        """设置 mpv 的 demuxer-lavf-o 解密 key。"""
+        if self._app is None:
+            return
+        try:
+            player = self._app.player
+            handle = player._mpv.handle
+            from mpv import _mpv_set_option_string
+            _mpv_set_option_string(
+                handle,
+                b'demuxer-lavf-o',
+                b'key=' + key_hex.encode(),
+            )
+        except Exception as e:
+            logger.warning("Failed to set mpv decrypt key: %s", e)
 
     def song_list_quality(self, song) -> List[Quality.Audio]:
         return [Quality.Audio("lq")]

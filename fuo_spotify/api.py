@@ -269,18 +269,10 @@ class SpotifyApi:
             return None
 
     def get_track_stream_url(self, track_id: str) -> Optional[str]:
-        """获取 track 的完整音频 CDN URL。
-
-        流程：
-        1. 调 extended-metadata (TRACK_V4) 获取 track metadata 中的 AudioFile 条目
-        2. 从 protobuf 解析 FileId（20 字节）和 format
-        3. 过滤掉 ab67616d0000 前缀的加密文件（CDN 不提供）
-        4. 按质量优先级选择最佳格式
-        5. 用 FileId 调 storage-resolve 获取 CDN URL
-        """
+        """获取 track 的完整音频 CDN URL（仅未加密文件）。"""
         logger.debug("Getting stream URL: %s", track_id)
         try:
-            file_id = self._get_best_file_id(track_id)
+            file_id = self._get_best_file_id(track_id, allow_encrypted=False)
             if not file_id:
                 logger.warning("No usable FileId found for %s", track_id)
                 return None
@@ -311,6 +303,19 @@ class SpotifyApi:
         except Exception as e:
             logger.warning(f"Get stream URL failed for {track_id}: {e}")
             return None
+
+    def get_encrypted_file_id(self, track_id: str) -> Optional[bytes]:
+        """获取 track 的最佳加密 FileId（用于 Widevine 解密）。"""
+        return self._get_best_file_id(track_id, allow_encrypted=True,
+                                      encrypted_only=True)
+
+    def get_auth_and_client_token(self) -> tuple[str, str]:
+        """返回 (access_token, client_token)。"""
+        self._ensure_auth()
+        base = self._song.base
+        token = base.access_token if isinstance(base.access_token, str) else ""
+        client_token = base.client_token if isinstance(base.client_token, str) else ""
+        return token, client_token
 
     def _ensure_auth(self):
         """确保 spotapi base client 已完成认证初始化（获取 access_token 等）。"""
@@ -344,8 +349,15 @@ class SpotifyApi:
             headers["client-token"] = client_token
         return headers
 
-    def _get_best_file_id(self, track_id: str) -> Optional[bytes]:
+    def _get_best_file_id(self, track_id: str,
+                          allow_encrypted: bool = False,
+                          encrypted_only: bool = False) -> Optional[bytes]:
         """从 track metadata 中获取最佳可用的 FileId。
+
+        Args:
+            track_id: Spotify track ID
+            allow_encrypted: 是否允许返回加密文件的 FileId
+            encrypted_only: 是否只返回加密文件的 FileId
 
         Returns:
             20 字节的 FileId bytes，或 None
@@ -391,13 +403,21 @@ class SpotifyApi:
                 logger.warning("No AudioFile entries found for %s", track_id)
                 return None
 
-            # 过滤掉加密文件（ab67616d0000 前缀）
-            usable = [
-                (fid, fmt) for fid, fmt in audio_files
-                if not fid[:6] == _ENCRYPTED_PREFIX
-            ]
+            # 按需求过滤文件
+            if encrypted_only:
+                usable = [
+                    (fid, fmt) for fid, fmt in audio_files
+                    if fid[:6] == _ENCRYPTED_PREFIX
+                ]
+            elif allow_encrypted:
+                usable = list(audio_files)
+            else:
+                usable = [
+                    (fid, fmt) for fid, fmt in audio_files
+                    if not fid[:6] == _ENCRYPTED_PREFIX
+                ]
             if not usable:
-                logger.warning("All AudioFiles are encrypted for %s", track_id)
+                logger.warning("No usable AudioFiles for %s", track_id)
                 return None
 
             # 按格式优先级排序，选最佳
