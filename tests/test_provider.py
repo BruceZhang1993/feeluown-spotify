@@ -140,6 +140,28 @@ def test_song_get_media_no_url(mock_api):
     assert result is None
 
 
+def test_play_via_widevine_returns_media_with_decryption_key(mock_api):
+    from fuo_spotify.provider import provider
+
+    provider._api = mock_api
+    mock_api.get_encrypted_file_id.return_value = bytes.fromhex("001122")
+    mock_api.get_auth_and_client_token.return_value = ("auth-token", "client-token")
+
+    with patch("fuo_spotify.widevine.get_seektable") as mock_seektable, \
+            patch("fuo_spotify.widevine.get_cdn_url") as mock_cdn_url, \
+            patch("fuo_spotify.widevine.get_widevine_key") as mock_key:
+        mock_seektable.return_value = {"pssh": {"widevine": "pssh-data"}}
+        mock_cdn_url.return_value = "https://example.com/encrypted.m4a"
+        mock_key.return_value = "0123456789abcdef"
+
+        media = provider._play_via_widevine("track1", "/tmp/device.wvd")
+
+    assert media is not None
+    assert media.url == "https://example.com/encrypted.m4a"
+    assert media.decryption_key == "0123456789abcdef"
+    mock_cdn_url.assert_called_once_with("001122", "auth-token", "client-token")
+
+
 # --- song_list_quality ---
 
 def test_song_list_quality():
