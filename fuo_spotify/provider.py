@@ -164,7 +164,7 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             return None
 
     def _play_via_widevine(self, track_id: str, wvd_path: str) -> Optional[Media]:
-        """通过 Widevine 获取解密 key，设置 mpv 选项，返回加密 CDN URL。"""
+        """通过 Widevine 获取解密 key，返回携带解密 key 的加密 CDN URL。"""
         try:
             from fuo_spotify.widevine import get_seektable, get_cdn_url, get_widevine_key
 
@@ -182,30 +182,13 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             pssh_str = seektable["pssh"]["widevine"]
             key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
 
-            self._set_mpv_decrypt_key(key_hex)
-
             logger.info("Widevine: key=%s cdn=%s", key_hex, cdn_url[:60])
             return Media(cdn_url, bitrate=320, format="mp4",
-                         http_headers=self._CDN_HEADERS)
+                         http_headers=self._CDN_HEADERS,
+                         decryption_key=key_hex)
         except Exception as e:
             logger.warning(f"Widevine playback failed for {track_id}: {e}")
             return None
-
-    def _set_mpv_decrypt_key(self, key_hex: str) -> None:
-        """设置 mpv 的 demuxer-lavf-o 解密 key。"""
-        if self._app is None:
-            return
-        try:
-            player = self._app.player
-            handle = player._mpv.handle
-            from mpv import _mpv_set_option_string
-            _mpv_set_option_string(
-                handle,
-                b'demuxer-lavf-o',
-                b'key=' + key_hex.encode(),
-            )
-        except Exception as e:
-            logger.warning("Failed to set mpv decrypt key: %s", e)
 
     def song_list_quality(self, song) -> List[Quality.Audio]:
         return [Quality.Audio("lq")]
