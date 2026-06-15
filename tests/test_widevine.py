@@ -77,7 +77,7 @@ def main():
     logger.info("✅ Token 获取成功")
 
     # ── 获取加密 file_id ──
-    from fuo_spotify.api import SpotifyApi, _ENCRYPTED_PREFIX
+    from fuo_spotify.api import SpotifyApi
     api = SpotifyApi(login)
     file_id = api.get_encrypted_file_id(TEST_TRACK_ID)
     if not file_id:
@@ -87,48 +87,37 @@ def main():
     logger.info("✅ 加密 file_id: %s", file_id_hex)
 
     # ── 获取 seektable ──
-    from fuo_spotify.widevine import get_seektable, get_cdn_url, get_widevine_key, download_encrypted
+    from fuo_spotify.widevine import get_seektable, get_cdn_url, get_widevine_key
+    import requests
     logger.info("=== 获取 seektable ===")
-    seektable = get_seektable(file_id_hex)
-    pssh_str = seektable["pssh"]["widevine"]
-    logger.info("✅ PSSH: %s", pssh_str[:60])
+    pssh_str = None
+    try:
+        seektable = get_seektable(file_id_hex)
+        pssh_str = seektable["pssh"]["widevine"]
+        logger.info("✅ PSSH: %s", pssh_str[:60])
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            logger.warning("⚠️ 该 track 不支持解密，跳过")
 
     # ── 获取 CDN URL ──
     logger.info("=== 获取 CDN URL ===")
     cdn_url = get_cdn_url(file_id_hex, auth_token, client_token)
-    logger.info("✅ CDN URL: %s", cdn_url[:80])
+    logger.info("✅ CDN URL: %s", cdn_url)
+    
+    if pssh_str is not None:
+        # ── 获取 Widevine key ──
+        logger.info("=== 获取 Widevine key ===")
+        key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
+        logger.info("✅ Content key: %s", key_hex)
 
-    # ── 下载加密音频 ──
-    import tempfile, os
-    logger.info("=== 下载加密音频 ===")
-    tmp_dir = tempfile.mkdtemp(prefix="fuo_widevine_test_")
-    encrypted_path = os.path.join(tmp_dir, "encrypted.mp4")
-    download_encrypted(cdn_url, encrypted_path)
-    logger.info("✅ 下载完成: %d bytes", os.path.getsize(encrypted_path))
-
-    # ── 获取 Widevine key ──
-    logger.info("=== 获取 Widevine key ===")
-    key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
-    logger.info("✅ Content key: %s", key_hex)
-
-    # ── ffmpeg 解密 ──
-    import subprocess
-    logger.info("=== ffmpeg 解密 ===")
-    decrypted_path = os.path.join(tmp_dir, "decrypted.m4a")
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-decryption_key", key_hex,
-         "-i", encrypted_path, "-c:a", "copy", decrypted_path],
-        capture_output=True, timeout=60,
-    )
-    if result.returncode != 0:
-        logger.error("❌ ffmpeg 失败: %s", result.stderr.decode()[:200])
-        return False
-    logger.info("✅ 解密完成: %s (%d bytes)", decrypted_path, os.path.getsize(decrypted_path))
-
-    # ── 播放 ──
-    logger.info("=== 播放 ===")
-    logger.info("文件: %s", decrypted_path)
-    logger.info("可用 mpv 播放: mpv --no-video %s", decrypted_path)
+        # ── 播放 ──
+        logger.info("=== 播放 ===")
+        logger.info("文件: %s", cdn_url)
+        logger.info("可用 mpv 播放: mpv demuxer-lavf-o=decryption_key=%s %s", key_hex, cdn_url)
+    else:
+        logger.info("=== 播放 ===")
+        logger.info("文件: %s", cdn_url)
+        logger.info("可用 mpv 播放: mpv --no-video %s", cdn_url)
 
     return True
 

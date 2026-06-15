@@ -1,6 +1,6 @@
 import json
 import logging
-import re
+import requests
 from typing import List, Mapping, Optional, Tuple
 
 import spotapi
@@ -11,24 +11,30 @@ logger = logging.getLogger(__name__)
 
 _BASE62 = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-# Spotify 加密文件的 FileId 前缀（CDN 不提供此类文件）
-_ENCRYPTED_PREFIX = b'\xab\x67\x61\x6d\x00\x00'
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0",
+    "Accept": "*/*",
+    "Referer": "https://open.spotify.com/",
+    "Origin": "https://open.spotify.com",
+}
+
+STORAGE_RESOLVE_URL = (
+    "https://spclient.wg.spotify.com"
+    "/storage-resolve/v2/files/audio/interactive/10/{file_id}"
+    "?version=10000000&product=9&platform=39&alt=json"
+)
 
 # 格式优先级（数字越小越优先），来自 librespot AudioFileFormat 枚举
-# 0=OGG_96, 1=OGG_160, 2=OGG_320, 3=MP3_256, 4=MP3_320, 5=MP3_160, 6=MP3_96
-# 8=AAC_48, 10=AAC_160, 11=AAC_320, 16=FLAC
+# OGG 类型（0, 1, 2）已排除
 _FORMAT_PRIORITY = {
-    2: 0,   # OGG_320
-    1: 1,   # OGG_160
-    0: 2,   # OGG_96
-    16: 3,  # FLAC
-    4: 4,   # MP3_320
-    3: 5,   # MP3_256
-    5: 6,   # MP3_160
-    11: 7,  # AAC_320
-    10: 8,  # AAC_160
-    6: 9,   # MP3_96
-    8: 10,  # AAC_48
+    16: 0,  # FLAC
+    4: 1,   # MP3_320
+    3: 2,   # MP3_256
+    5: 3,   # MP3_160
+    11: 4,  # AAC_320
+    10: 5,  # AAC_160
+    6: 6,   # MP3_96
+    8: 7,   # AAC_48
 }
 
 
@@ -272,7 +278,7 @@ class SpotifyApi:
         """获取 track 的完整音频 CDN URL（仅未加密文件）。"""
         logger.debug("Getting stream URL: %s", track_id)
         try:
-            file_id = self._get_best_file_id(track_id, allow_encrypted=False)
+            file_id = self._get_best_file_id(track_id)
             if not file_id:
                 logger.warning("No usable FileId found for %s", track_id)
                 return None
@@ -280,34 +286,22 @@ class SpotifyApi:
             file_id_hex = file_id.hex()
             logger.debug("Using FileId %s for %s", file_id_hex, track_id)
 
-            url = (f"https://spclient.wg.spotify.com"
-                   f"/storage-resolve/files/audio/interactive/{file_id_hex}")
-            resp = self._song.base.client.get(url, authenticate=True)
-            if resp.fail:
-                logger.warning("Get stream URL failed for %s: %s",
-                               track_id, resp.error.string)
-                return None
-
-            raw = resp.response
-            if isinstance(raw, str):
-                raw = raw.encode('utf-8', errors='replace')
-
-            m = re.search(rb'(https://[^\x00-\x1f"\s]+)', raw)
-            if m:
-                stream_url = m.group(1).decode('utf-8')
-                logger.info("Got stream URL for %s", track_id)
-                return stream_url
-
-            logger.warning("No CDN URL found for %s", track_id)
-            return None
+            url = STORAGE_RESOLVE_URL.format(file_id=file_id_hex)
+            headers = self._get_auth_headers()
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            urls = data.get("cdnurl", [])
+            if not urls:
+                raise RuntimeError(f"No CDN URL for file_id={file_id}")
+            return urls[1]
         except Exception as e:
             logger.warning(f"Get stream URL failed for {track_id}: {e}")
             return None
 
     def get_encrypted_file_id(self, track_id: str) -> Optional[bytes]:
-        """获取 track 的最佳加密 FileId（用于 Widevine 解密）。"""
-        return self._get_best_file_id(track_id, allow_encrypted=True,
-                                      encrypted_only=True)
+        """获取 track 的最佳 FileId（用于 Widevine 解密）。"""
+        return self._get_best_file_id(track_id)
 
     def get_auth_and_client_token(self) -> tuple[str, str]:
         """返回 (access_token, client_token)。"""
@@ -349,15 +343,11 @@ class SpotifyApi:
             headers["client-token"] = client_token
         return headers
 
-    def _get_best_file_id(self, track_id: str,
-                          allow_encrypted: bool = False,
-                          encrypted_only: bool = False) -> Optional[bytes]:
-        """从 track metadata 中获取最佳可用的 FileId。
+    def _get_best_file_id(self, track_id: str) -> Optional[bytes]:
+        """从 track-playback API 获取用于 seektable/widevine 的 FileId。
 
         Args:
             track_id: Spotify track ID
-            allow_encrypted: 是否允许返回加密文件的 FileId
-            encrypted_only: 是否只返回加密文件的 FileId
 
         Returns:
             20 字节的 FileId bytes，或 None
@@ -367,25 +357,21 @@ class SpotifyApi:
         try:
             self._ensure_auth()
 
-            url = ("https://spclient.wg.spotify.com"
-                   "/extended-metadata/v0/extended-metadata")
-            payload = {
-                "entityRequest": [{
-                    "entityUri": f"spotify:track:{track_id}",
-                    "query": [{"extensionKind": 10, "etag": ""}],
-                }]
+            track_uri = f"spotify:track:{track_id}"
+            url = ("https://gue1-spclient.spotify.com"
+                   f"/track-playback/v1/media/{track_uri}")
+            params = {
+                "manifestFileFormat": "file_ids_mp4",
             }
 
-            # 重试一次（处理 token 过期的情况）
             for attempt in range(2):
                 headers = self._get_auth_headers()
                 cookies = dict(self._song.base.client.cookies)
-                resp = _requests.post(
-                    url, json=payload, headers=headers,
+                resp = _requests.get(
+                    url, params=params, headers=headers,
                     cookies=cookies, timeout=10)
                 if resp.status_code == 401 and attempt == 0:
                     logger.debug("Token expired, refreshing...")
-                    # 强制重新初始化 token
                     base = self._song.base
                     base.get_session()
                     base.get_client_token()
@@ -393,39 +379,28 @@ class SpotifyApi:
                 break
 
             if resp.status_code != 200:
-                logger.warning("Get track metadata failed for %s: HTTP %d",
+                logger.warning("Get track-playback failed for %s: HTTP %d",
                                track_id, resp.status_code)
                 return None
 
-            raw = resp.content
-            audio_files = _parse_audio_files(raw)
-            if not audio_files:
-                logger.warning("No AudioFile entries found for %s", track_id)
+            data = resp.json()
+            media = data.get("media", {})
+            track_data = media.get(track_uri, {})
+            manifest = track_data.get("item", {}).get("manifest", {})
+            mp4_files = manifest.get("file_ids_mp4", [])
+
+            if not mp4_files:
+                logger.warning("No file_ids_mp4 entries for %s", track_id)
                 return None
 
-            # 按需求过滤文件
-            if encrypted_only:
-                usable = [
-                    (fid, fmt) for fid, fmt in audio_files
-                    if fid[:6] == _ENCRYPTED_PREFIX
-                ]
-            elif allow_encrypted:
-                usable = list(audio_files)
-            else:
-                usable = [
-                    (fid, fmt) for fid, fmt in audio_files
-                    if not fid[:6] == _ENCRYPTED_PREFIX
-                ]
-            if not usable:
-                logger.warning("No usable AudioFiles for %s", track_id)
+            file_id_str = mp4_files[0].get("file_id", "")
+            if not file_id_str:
+                logger.warning("Empty file_id for %s", track_id)
                 return None
 
-            # 按格式优先级排序，选最佳
-            usable.sort(key=lambda x: _FORMAT_PRIORITY.get(x[1], 99))
-            best_fid, best_fmt = usable[0]
-            logger.info("Selected format %d for %s (file_id=%s)",
-                        best_fmt, track_id, best_fid.hex())
-            return best_fid
+            file_id = bytes.fromhex(file_id_str)
+            logger.info("Selected file_id for %s: %s", track_id, file_id_str)
+            return file_id
 
         except Exception as e:
             logger.warning(f"Get best file_id failed for {track_id}: {e}")

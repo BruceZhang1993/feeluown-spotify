@@ -39,7 +39,7 @@ def get_cdn_url(file_id: str, auth_token: str, client_token: str) -> str:
     urls = data.get("cdnurl", [])
     if not urls:
         raise RuntimeError(f"No CDN URL for file_id={file_id}")
-    return urls[0]
+    return urls[1]
 
 
 def get_widevine_key(pssh_str: str, wvd_path: str, client_token: str) -> str:

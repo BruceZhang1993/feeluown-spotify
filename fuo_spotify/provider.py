@@ -32,6 +32,7 @@ from feeluown.library import (
 )
 from feeluown.media import Media, Quality
 from feeluown.utils.reader import create_reader
+import requests
 
 from fuo_spotify.consts import PROVIDER_ID, PROVIDER_NAME
 from fuo_spotify.excs import SpotifyAPIError, SpotifyTrackError
@@ -132,19 +133,7 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
         if self._api is None:
             return None
         try:
-            # 先尝试获取未加密的 CDN URL
-            stream_url = self._api.get_track_stream_url(song.identifier)
-            if stream_url:
-                return Media(stream_url, bitrate=160, format="mp3",
-                             http_headers=self._CDN_HEADERS)
-
-            # 未加密文件不可用，尝试 Widevine 解密
-            wvd_path = self._get_wvd_path()
-            if wvd_path:
-                return self._play_via_widevine(song.identifier, wvd_path)
-
-            logger.debug("No unencrypted URL and no wvd_path configured")
-            return None
+            return self._play_via_widevine(song.identifier, self._get_wvd_path)
         except Exception as e:
             logger.warning(f"Get song media failed: {e}")
             return None
@@ -176,15 +165,18 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             file_id_hex = file_id.hex()
             auth_token, client_token = self._api.get_auth_and_client_token()
 
-            seektable = get_seektable(file_id_hex)
+            pssh_str = None
+            try:
+                seektable = get_seektable(file_id_hex)
+                pssh_str = seektable["pssh"]["widevine"]
+            except requests.HTTPError as e:
+                logger.info("Content is not decrypted, continue.")
             cdn_url = get_cdn_url(file_id_hex, auth_token, client_token)
-
-            pssh_str = seektable["pssh"]["widevine"]
-            key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
-
-            self._set_mpv_decrypt_key(key_hex)
-
-            logger.info("Widevine: key=%s cdn=%s", key_hex, cdn_url[:60])
+            logger.info(f"Got stream url: {cdn_url}")
+            if pssh_str is not None:
+                key_hex = get_widevine_key(pssh_str, wvd_path, client_token)
+                self._set_mpv_decrypt_key(key_hex)
+                logger.info("Widevine: key=%s cdn=%s", key_hex, cdn_url[:60])
             return Media(cdn_url, bitrate=320, format="mp4",
                          http_headers=self._CDN_HEADERS)
         except Exception as e:
@@ -202,7 +194,7 @@ class SpotifyProvider(AbstractProvider, ProviderV2):
             _mpv_set_option_string(
                 handle,
                 b'demuxer-lavf-o',
-                b'key=' + key_hex.encode(),
+                b'decryption_key=' + key_hex.encode(),
             )
         except Exception as e:
             logger.warning("Failed to set mpv decrypt key: %s", e)
